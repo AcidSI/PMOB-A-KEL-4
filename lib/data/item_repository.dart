@@ -1,5 +1,6 @@
 import 'lost_item_database.dart';
 import '../models/item.dart';
+import '../utils/campus_locations.dart';
 
 class ItemRepository {
   ItemRepository({
@@ -25,6 +26,14 @@ class ItemRepository {
         assetPath: lostItem.iconCategory == 'wallet'
             ? 'assets/images/dompet.jpg'
             : null,
+        latitude: CampusLocations.getCoordinates(
+          lostItem.lokasi,
+          fallbackSeed: lostItem.id,
+        ).latitude,
+        longitude: CampusLocations.getCoordinates(
+          lostItem.lokasi,
+          fallbackSeed: lostItem.id,
+        ).longitude,
       ),
     Item(
       id: 'sample-tumbler',
@@ -40,7 +49,55 @@ class ItemRepository {
       brand: 'smätt',
       reporter: 'Pelapor',
       assetPath: 'assets/images/tumbler.jpg',
+      latitude: -0.91462,
+      longitude: 100.45981,
     ),
+    Item(
+      id: 'found-001',
+      nameItem: 'KTM Mahasiswa Unand',
+      subtitle: 'Ditemukan di Perpustakaan Pusat',
+      description:
+          'Ditemukan Kartu Tanda Mahasiswa atas nama Rian Pratama jurusan Sistem Informasi di meja baca lantai 2.',
+      location: 'Perpustakaan Pusat',
+      isFound: true,
+      category: 'Dokumen',
+      eventDate: DateTime(2026, 10, 14, 11, 30),
+      reporter: 'Petugas Perpus',
+      iconCategory: 'book',
+      latitude: -0.91462,
+      longitude: 100.45981,
+    ),
+    Item(
+      id: 'found-002',
+      nameItem: 'Kunci Motor Honda',
+      subtitle: 'Ditemukan di Parkiran Fakultas Ekonomi',
+      description:
+          'Kunci motor Honda dengan gantungan tali hitam ditemukan di dekat pos satpam parkiran FE.',
+      location: 'Parkiran Fakultas Ekonomi',
+      isFound: true,
+      category: 'Aksesori',
+      eventDate: DateTime(2026, 10, 15, 14, 15),
+      reporter: 'Satpam FE',
+      iconCategory: 'key',
+      latitude: -0.91800,
+      longitude: 100.45900,
+    ),
+    Item(
+      id: 'found-003',
+      nameItem: 'Botol Minum Tupperware',
+      subtitle: 'Ditemukan di Ruang Kelas GKB 1',
+      description:
+          'Botol minum Tupperware warna biru toska tertinggal di bawah kursi baris depan.',
+      location: 'Ruang Kelas GKB 1',
+      isFound: true,
+      category: 'Lainnya',
+      eventDate: DateTime(2026, 10, 16, 10, 00),
+      reporter: 'Cleaning Service',
+      iconCategory: 'tumbler',
+      latitude: -0.91520,
+      longitude: 100.46210,
+    ),
+    
   ];
 
   final List<Item> items;

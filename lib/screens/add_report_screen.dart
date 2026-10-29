@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/item.dart';
 import '../services/device_image_picker.dart';
 import '../utils/validators.dart';
+import '../utils/campus_locations.dart';
 
 class AddReportScreen extends StatefulWidget {
   final bool isFound; // parameter untuk menentukan apakah laporan ini untuk barang yang ditemukan atau hilang
@@ -140,6 +141,8 @@ class _AddReportScreenState extends State<AddReportScreen> {
         eventDate: eventDateTime,
         imageData: _imageData,
         isOwner: true,
+        latitude: CampusLocations.getCoordinates(_locationController.text.trim()).latitude,
+        longitude: CampusLocations.getCoordinates(_locationController.text.trim()).longitude,
       );
     } catch (error) {
       if (!mounted) return;

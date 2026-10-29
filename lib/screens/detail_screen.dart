@@ -118,7 +118,13 @@ class _DetailScreenState extends State<DetailScreen> {
               spacing: 12,
               runSpacing: 8,
               children: [
-                if (item.color case final color?)
+                if (item.hasCoordinates)
+                _ItemDetailTag(
+                  icon: Icons.gps_fixed,
+                  label:
+                      'GPS: ${item.latitude!.toStringAsFixed(4)}, ${item.longitude!.toStringAsFixed(4)}',
+                ),
+              if (item.color case final color?)
                   _ItemDetailTag(icon: Icons.palette_outlined, label: color),
                 if (item.brand case final brand?)
                   _ItemDetailTag(
@@ -150,6 +156,16 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
           ],
           const Divider(height: 32),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pushNamed<void>(
+              context,
+              AppRoutes.mapDiscovery,
+              arguments: item,
+            ),
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Lihat Lokasi di Peta Kampus'),
+          ),
+          const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: () => Navigator.pushNamed<void>(
               context,

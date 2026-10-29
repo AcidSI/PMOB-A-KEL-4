@@ -217,6 +217,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: Colors.white,
                 icon: const Icon(Icons.manage_search),
               ),
+              IconButton(
+                tooltip: 'Peta Kampus (Discovery)',
+                onPressed: () =>
+                    Navigator.pushNamed<void>(context, AppRoutes.mapDiscovery),
+                color: Colors.white,
+                icon: const Icon(Icons.map_outlined),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -475,7 +482,14 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             Icon(Icons.home, color: scheme.primary, size: 29),
-            Icon(Icons.map_outlined, color: scheme.primary, size: 27),
+            IconButton(
+              tooltip: 'Peta Kampus (Discovery)',
+              icon: Icon(Icons.map_outlined, color: scheme.primary, size: 27),
+              onPressed: () => Navigator.pushNamed<void>(
+                context,
+                AppRoutes.mapDiscovery,
+              ),
+            ),
             const SizedBox(width: 42),
             Icon(Icons.notifications_none, color: scheme.primary, size: 28),
             Icon(Icons.account_circle_outlined, color: scheme.primary, size: 29),

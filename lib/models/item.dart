@@ -15,6 +15,8 @@ class Item {
   final String? reporter;
   final String? iconCategory;
   final bool isOwner;
+  final double? latitude;
+  final double? longitude;
 
   const Item({
     required this.id,
@@ -32,7 +34,11 @@ class Item {
     this.reporter,
     this.iconCategory,
     this.isOwner = false,
+    this.latitude,
+    this.longitude,
   });
+
+  bool get hasCoordinates => latitude != null && longitude != null;
 
   String get eventDateLabel {
     final date = eventDate;
