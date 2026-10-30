@@ -17,15 +17,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // State async memisahkan loading, daftar kosong, hasil, dan error.
+  
   late final ItemRepository _repository;
   final _searchController = TextEditingController();
   ViewStatus _status = ViewStatus.loading;
   List<Item> _items = [];
+  final List<Item> _localItems = [];
   String _errorMessage = '';
   String _selectedFilter = 'Semua';
-  // Toggle ini sengaja mutable agar error state dapat diuji sesuai praktikum.
-  // ignore: prefer_final_fields
+  
   bool _simulateError = false;
 
   @override
@@ -47,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final items = await _repository.fetchItems(simulateError: _simulateError);
       if (!mounted) return;
       setState(() {
-        _items = items;
+        _items = [..._localItems, ...items];
         _status = ViewStatus.success;
         _errorMessage = '';
       });
@@ -72,12 +72,83 @@ class _HomeScreenState extends State<HomeScreen> {
         'Ditemukan' => item.isFound,
         _ => true,
       };
-      final matchesQuery = query.isEmpty ||
-          item.title.toLowerCase().contains(query) ||
+      final matchesQuery =
+          query.isEmpty ||
+          item.nameItem.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
-          item.location.toLowerCase().contains(query);
+          item.location.toLowerCase().contains(query) ||
+          item.category.toLowerCase().contains(query);
       return matchesFilter && matchesQuery;
     }).toList();
+  }
+
+  Future<void> _openAddReport() async {
+    final isFound = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Buat laporan',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                key: const Key('create-lost-report'),
+                leading: const Icon(Icons.search),
+                title: const Text('Barang Hilang'),
+                subtitle: const Text('Laporkan barang milik Anda yang hilang'),
+                onTap: () => Navigator.pop(context, false),
+              ),
+              ListTile(
+                key: const Key('create-found-report'),
+                leading: const Icon(Icons.check_circle_outline),
+                title: const Text('Barang Ditemukan'),
+                subtitle: const Text('Laporkan barang yang Anda temukan'),
+                onTap: () => Navigator.pop(context, true),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || isFound == null) return;
+    await _createReport(isFound);
+  }
+
+  Future<void> _createReport(bool isFound) async {
+    final item = await Navigator.pushNamed<Item>(
+      context,
+      AppRoutes.addReport,
+      arguments: isFound,
+    );
+    if (!mounted || item == null) return;
+    setState(() {
+      _localItems.insert(0, item);
+      _items.insert(0, item);
+      _selectedFilter = 'Semua';
+      _searchController.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Laporan baru ditambahkan ke daftar.')),
+    );
+  }
+
+  Future<void> _openItem(Item item) async {
+    final deletedId = await Navigator.pushNamed<String>(
+      context,
+      AppRoutes.detail,
+      arguments: item,
+    );
+    if (!mounted || deletedId == null) return;
+    setState(() {
+      _items.removeWhere((entry) => entry.id == deletedId);
+      _localItems.removeWhere((entry) => entry.id == deletedId);
+    });
   }
 
   @override
@@ -89,51 +160,48 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             _buildHeader(),
-            //TextButton(
-              // onPressed: () => Navigator.pushNamed(context, '/route-tidak-ada'),
-              // child: const Text('Tes 404'),),
-            Expanded(child: _buildContent()),
+            Expanded(
+              child: _buildContent(),
+            ),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Buat laporan',
-        backgroundColor: const Color(0xFF059669),
-        foregroundColor: Colors.white,
-        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Form laporan belum tersedia.')),
-        ),
+        onPressed: _openAddReport,
         child: const Icon(Icons.camera_alt),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: _buildBottomBar(),
     );
   }
 
   Widget _buildHeader() {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
-      decoration: const BoxDecoration(
-        color: Color(0xFF045436),
+      decoration: BoxDecoration(
+        color: scheme.primary,
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
       child: Column(
         children: [
           Row(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 20,
                 backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Color(0xFF045436), size: 28),
+                child: Icon(Icons.person, color: scheme.primary, size: 28),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Selamat Datang,',
-                        style: TextStyle(color: Color(0xFF5CC9B1))),
+                    Text('Selamat Datang',
+                        style: TextStyle(color: scheme.secondary, fontSize: 12)),
                     Text(
-                      'Martia Perdana Putri',
+                      'Mari Temukan Barangmu!',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 14,
@@ -162,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _searchController,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              hintText: 'Cari nama barang',
+              hintText: 'Cari Barang',
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: Colors.white,
@@ -185,21 +253,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return _buildReportList();
   }
-
+  // --- Daftar laporan barang ---
   Widget _buildReportList() {
     final items = _visibleItems;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(22, 24, 22, 100),
+      padding: const EdgeInsets.fromLTRB(22, 36, 22, 100),
       children: [
-        const Text(
-          'PETA KAMPUS UNAND',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 10),
-        const _CampusMap(),
-        const SizedBox(height: 16),
+        Align(alignment: Alignment.centerLeft, child: _buildReportCallout()),
+        const SizedBox(height: 26),
         _buildFilters(),
-        const SizedBox(height: 36),
+        const SizedBox(height: 30),
         const Text(
           'LAPORAN TERBARU',
           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
@@ -215,7 +278,50 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-
+  // --- Kartu laporan barang ---
+  Widget _buildReportCallout() {
+    return Material(
+      color: const Color(0xFFFEDADA),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        key: const Key('home-create-report'),
+        onTap: () => _createReport(false),
+        borderRadius: BorderRadius.circular(20),
+        child: SizedBox(
+          width: 165,
+          height: 132,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.search,
+                color: Color(0xFFC20E18),
+                size: 56,
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'Laporkan',
+                style: TextStyle(
+                  color: Color(0xFFC20E18),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const Text(
+                'Barang Hilang',
+                style: TextStyle(
+                  color: Color(0xFFC20E18),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  // --- Filter laporan barang ---
   Widget _buildFilters() {
     const filters = ['Semua', 'Kehilangan', 'Ditemukan'];
     return Row(
@@ -237,9 +343,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 fontSize: 12,
               ),
               backgroundColor: Colors.white,
-              selectedColor: const Color(0xFF059669),
+              selectedColor: const Color(0xFF045436),
               side: BorderSide(
-                color: selected ? const Color(0xFF059669) : Colors.black12,
+                color: selected ? const Color(0xFF045436) : Colors.black12,
               ),
               shape: const StadiumBorder(),
             ),
@@ -248,10 +354,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }).toList(),
     );
   }
-
+  // --- Ringkasan informasi ---
   Widget _buildItemCard(Item item) {
     final statusColor = item.isFound
-        ? const Color(0xFF059669)
+        ? const Color(0xFF045436)
         : const Color(0xFFEF4444);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -263,11 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () => Navigator.pushNamed(
-            context,
-            AppRoutes.detail,
-            arguments: item,
-          ),
+          onTap: () => _openItem(item),
           child: SizedBox(
             height: 101,
             child: Row(
@@ -285,7 +387,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                item.title,
+                                item.nameItem,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -303,7 +405,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          item.subtitle,
+                          item.category,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -338,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(
-                                item.timeAgo,
+                                item.eventDateLabel,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.right,
@@ -363,9 +465,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+  // --- Bar navigasi bawah ---
   Widget _buildBottomBar() {
-    const green = Color(0xFF045436);
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       height: 64,
       decoration: BoxDecoration(
@@ -373,124 +475,19 @@ class _HomeScreenState extends State<HomeScreen> {
         border: Border.all(color: const Color(0x40888888)),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: const SafeArea(
+      child: SafeArea(
         top: false,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Icon(Icons.home, color: green, size: 29),
-            Icon(Icons.map_outlined, color: green, size: 27),
-            Icon(Icons.add_circle, color: green, size: 36),
-            Icon(Icons.notifications_none, color: green, size: 28),
-            Icon(Icons.account_circle_outlined, color: green, size: 29),
+            Icon(Icons.home, color: scheme.primary, size: 29),
+            Icon(Icons.map_outlined, color: scheme.primary, size: 27),
+            const SizedBox(width: 42),
+            Icon(Icons.notifications_none, color: scheme.primary, size: 28),
+            Icon(Icons.account_circle_outlined, color: scheme.primary, size: 29),
           ],
         ),
       ),
     );
   }
 }
-
-class _CampusMap extends StatelessWidget {
-  const _CampusMap();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: SizedBox(
-        height: 142,
-        child: CustomPaint(
-          painter: _CampusMapPainter(),
-          child: const Stack(
-            children: [
-              Positioned(left: 42, top: 26, child: _MapPin()),
-              Positioned(left: 186, top: 53, child: _MapPin()),
-              Positioned(right: 53, top: 37, child: _MapPin()),
-              Positioned(
-                left: 12,
-                bottom: 10,
-                child: Text(
-                  'UNIVERSITAS ANDALAS',
-                  style: TextStyle(
-                    color: Color(0xFF486454),
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MapPin extends StatelessWidget {
-  const _MapPin();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Icon(Icons.location_on, size: 17, color: Color(0xFF059669));
-  }
-}
-
-class _CampusMapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final background = Paint()..color = const Color(0xFFF7F7F3);
-    canvas.drawRect(Offset.zero & size, background);
-    final green = Paint()..color = const Color(0xFFD7F0E4);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(-20, 12, 90, 46),
-        const Radius.circular(24),
-      ),
-      green,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width - 75, 74, 100, 60),
-        const Radius.circular(24),
-      ),
-      green,
-    );
-    final road = Paint()
-      ..color = const Color(0xFFCAD4D8)
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final roadCenter = Path()
-      ..moveTo(-10, size.height * .77)
-      ..cubicTo(size.width * .24, size.height * .25, size.width * .41,
-          size.height * .92, size.width * .68, size.height * .31)
-      ..cubicTo(size.width * .82, size.height * .02, size.width * .91,
-          size.height * .82, size.width + 10, size.height * .45);
-    canvas.drawPath(roadCenter, road);
-    final minorRoad = Paint()
-      ..color = const Color(0xFFDCE2E3)
-      ..strokeWidth = 5
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    for (var index = 0; index < 4; index++) {
-      final path = Path()
-        ..moveTo(size.width * (index * .24), 0)
-        ..lineTo(size.width * (index * .24 + .13), size.height);
-      canvas.drawPath(path, minorRoad);
-    }
-    final block = Paint()..color = const Color(0xFFEAE9E2);
-    for (var index = 0; index < 5; index++) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(18 + index * 68, 24 + (index % 2) * 58, 36, 22),
-          const Radius.circular(4),
-        ),
-        block,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CampusMapPainter oldDelegate) => false;
-}
-

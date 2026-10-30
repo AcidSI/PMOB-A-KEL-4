@@ -10,19 +10,40 @@ class ItemArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color) = switch (item.id) {
-      '1' => (Icons.headphones, const Color(0xFFB9D3E4)),
-      '2' => (Icons.local_drink, const Color(0xFF9CC96D)),
-      _ => (Icons.account_balance_wallet, const Color(0xFFB8895B)),
-    };
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.32),
+        color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(icon, color: color, size: size * 0.58),
+      clipBehavior: Clip.antiAlias,
+      child: item.imageData == null
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.image_not_supported_outlined,
+                  color: const Color(0xFF94A3B8),
+                  size: size * 0.38,
+                ),
+                SizedBox(height: size * 0.04),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Belum ada foto',
+                      style: TextStyle(
+                        color: const Color(0xFF64748B),
+                        fontSize: size < 100 ? 8 : 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Image.memory(item.imageData!, fit: BoxFit.cover),
     );
   }
 }

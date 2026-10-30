@@ -13,26 +13,40 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  // Nilai non-null dari form dicatat setelah route mengembalikan hasil.
-  String? _note;
-
-  Future<void> _openNoteForm() async {
-    final result = await Navigator.pushNamed<String>(
-      context,
-      AppRoutes.noteForm,
-    );
-    if (!mounted || result == null) return;
-    setState(() => _note = result);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Catatan berhasil disimpan')),
-    );
+  Future<void> _deleteReport() async {
+    try {
+      final shouldDelete = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Hapus laporan?'),
+          content: const Text('Laporan ini akan dihapus dari daftar.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Hapus'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || shouldDelete != true) return;
+      Navigator.pop<String>(context, widget.item.id);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Laporan gagal dihapus: $error')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
     final statusColor = item.isFound
-        ? const Color(0xFF059669)
+        ? const Color(0xFF045436)
         : const Color(0xFFEF4444);
     return Scaffold(
       backgroundColor: Colors.white,
@@ -57,7 +71,7 @@ class _DetailScreenState extends State<DetailScreen> {
           ),
           const SizedBox(height: 28),
           Text(
-            item.title,
+            item.nameItem,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 14),
@@ -70,6 +84,17 @@ class _DetailScreenState extends State<DetailScreen> {
             spacing: 12,
             runSpacing: 8,
             children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  item.category,
+                  style: const TextStyle(color: Color(0xFF045436), fontSize: 12),
+                ),
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                 decoration: BoxDecoration(
@@ -94,7 +119,7 @@ class _DetailScreenState extends State<DetailScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            item.timeAgo,
+            'Waktu kejadian: ${item.eventDateLabel}',
             style: const TextStyle(
               color: Color(0x99595858),
               fontSize: 12,
@@ -102,13 +127,23 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
           ),
           const Divider(height: 32),
-          Text(_note == null ? 'Belum ada catatan.' : 'Catatan: $_note'),
-          const SizedBox(height: 14),
           FilledButton.icon(
-            onPressed: _openNoteForm,
-            icon: const Icon(Icons.edit_note),
-            label: const Text('Tulis Catatan'),
+            onPressed: () => Navigator.pushNamed<void>(
+              context,
+              AppRoutes.chat,
+              arguments: item,
+            ),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: const Text('Chat Pelapor'),
           ),
+          if (item.isOwner) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _deleteReport,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Hapus Laporan'),
+            ),
+          ],
         ],
       ),
     );

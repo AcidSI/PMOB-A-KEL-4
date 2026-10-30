@@ -8,15 +8,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:nama_project/data/item_repository.dart';
-import 'package:nama_project/main.dart';
-import 'package:nama_project/models/item.dart';
-import 'package:nama_project/routes/app_routes.dart';
-import 'package:nama_project/screens/home_screen.dart';
+import 'package:findit/data/item_repository.dart';
+import 'package:findit/main.dart';
+import 'package:findit/models/item.dart';
+import 'package:findit/routes/app_routes.dart';
+import 'package:findit/screens/add_report_screen.dart';
+import 'package:findit/screens/home_screen.dart';
 
 void main() {
-  // Uji alur validasi login, kirim item, dan terima hasil catatan.
-  testWidgets('login validates and saves a note from item detail', (
+  // Uji alur login serta navigasi detail ke halaman chat pelapor.
+  testWidgets('login validates and opens chat from item detail', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(412, 917);
@@ -31,8 +32,14 @@ void main() {
     expect(find.text('Email Institusi / NIP wajib diisi'), findsOneWidget);
     expect(find.text('Password wajib diisi'), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('login-identity')), 'user@unand.ac.id');
-    await tester.enterText(find.byKey(const Key('login-password')), 'password1');
+    await tester.enterText(
+      find.byKey(const Key('login-identity')),
+      'user@unand.ac.id',
+    );
+    await tester.enterText(
+      find.byKey(const Key('login-password')),
+      'password1',
+    );
     await tester.tap(find.text('Masuk Sivitas'));
     await tester.pumpAndSettle();
 
@@ -42,13 +49,9 @@ void main() {
     expect(find.text('Detail Item'), findsOneWidget);
     expect(find.text('Ditemukan di dekat Masjid Unand'), findsOneWidget);
 
-    await tester.tap(find.text('Tulis Catatan'));
+    await tester.tap(find.text('Chat Pelapor'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField), 'Cek lokasi barang');
-    await tester.tap(find.text('Simpan'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Catatan: Cek lokasi barang'), findsOneWidget);
+    expect(find.text('Chat untuk laporan Earphone Bluetooth'), findsOneWidget);
   });
 
   testWidgets('login validates only the field the user has edited', (
@@ -58,7 +61,10 @@ void main() {
 
     await tester.enterText(find.byKey(const Key('login-identity')), 'invalid');
     await tester.pump();
-    expect(find.text('Masukkan email institusi atau NIP yang valid'), findsOneWidget);
+    expect(
+      find.text('Masukkan email institusi atau NIP yang valid'),
+      findsOneWidget,
+    );
     expect(find.text('Password wajib diisi'), findsNothing);
 
     await tester.enterText(find.byKey(const Key('login-password')), '123');
@@ -90,6 +96,111 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Tidak ada laporan yang cocok.'), findsOneWidget);
+  });
+
+  testWidgets('report form validates and returns a new report to Home', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412, 917);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        onGenerateRoute: AppRoutes.onGenerateRoute,
+        home: HomeScreen(
+          repository: const ItemRepository(fetchDelay: Duration.zero),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-create-report')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AddReportScreen), findsOneWidget);
+    expect(find.text('Buat Laporan Barang Hilang'), findsOneWidget);
+    expect(find.byType(SegmentedButton<bool>), findsNothing);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -250));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('submit-report')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('report-name')), 'Kunci motor');
+    await tester.pump();
+    expect(find.text('Nama barang wajib diisi'), findsNothing);
+    expect(find.text('Kategori wajib diisi'), findsNothing);
+    expect(find.text('Deskripsi wajib diisi'), findsNothing);
+    expect(find.text('Lokasi wajib diisi'), findsNothing);
+    await tester.tap(find.byKey(const Key('submit-report')));
+    await tester.pumpAndSettle();
+    expect(find.text('Nama barang wajib diisi'), findsNothing);
+    expect(find.text('Kategori wajib diisi'), findsOneWidget);
+    expect(find.text('Deskripsi wajib diisi'), findsOneWidget);
+    expect(find.text('Lokasi wajib diisi'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('report-category')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Aksesori').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Kategori wajib diisi'), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('report-description')));
+    await tester.enterText(
+      find.byKey(const Key('report-description')),
+      'Gantungan kunci merah.',
+    );
+    await tester.pump();
+    expect(find.text('Deskripsi wajib diisi'), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('report-location')));
+    await tester.enterText(
+      find.byKey(const Key('report-location')),
+      'Perpustakaan Unand',
+    );
+    await tester.pump();
+    expect(find.text('Lokasi wajib diisi'), findsNothing);
+    await tester.ensureVisible(find.byKey(const Key('submit-report')));
+    await tester.tap(find.byKey(const Key('submit-report')));
+    await tester.pump();
+    expect(find.text('Mengirim laporan...'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Laporan berhasil dikirim'), findsOneWidget);
+    await tester.tap(find.text('Kembali ke daftar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kunci motor'), findsOneWidget);
+    expect(find.text('Aksesori'), findsWidgets);
+    await tester.tap(find.text('Kunci motor').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Aksesori'), findsOneWidget);
+    expect(find.text('Gantungan kunci merah.'), findsOneWidget);
+    await tester.tap(find.text('Chat Pelapor'));
+    await tester.pumpAndSettle();
+    expect(find.text('Chat untuk laporan Kunci motor'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hapus Laporan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hapus').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Kunci motor'), findsNothing);
+  });
+
+  testWidgets('found-item report opens its own fixed form', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: AddReportScreen(isFound: true)),
+    );
+
+    expect(find.text('Buat Laporan Barang Ditemukan'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is RichText &&
+            widget.text.toPlainText().contains('Lokasi Ditemukan'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(SegmentedButton<bool>), findsNothing);
   });
 
   testWidgets('unknown named route displays the 404 screen', (tester) async {
