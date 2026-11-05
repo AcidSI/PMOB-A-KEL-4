@@ -36,18 +36,22 @@ class _DetailScreenState extends State<DetailScreen> {
       Navigator.pop<String>(context, widget.item.id);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Laporan gagal dihapus: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Laporan gagal dihapus: $error')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    final statusColor = item.isFound
-        ? const Color(0xFF045436)
-        : const Color(0xFFEF4444);
+    final statusColor = switch (item.status) {
+      ReportStatus.active =>
+        item.isFound ? const Color(0xFF045436) : const Color(0xFFEF4444),
+      ReportStatus.inVerification => const Color(0xFFB45309),
+      ReportStatus.resolved => const Color(0xFF64748B),
+      ReportStatus.expired || ReportStatus.removed => const Color(0xFF64748B),
+    };
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -66,9 +70,7 @@ class _DetailScreenState extends State<DetailScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         children: [
-          Center(
-            child: ItemArtwork(item: item, size: 277),
-          ),
+          Center(child: ItemArtwork(item: item, size: 277)),
           const SizedBox(height: 28),
           Text(
             item.nameItem,
@@ -85,31 +87,40 @@ class _DetailScreenState extends State<DetailScreen> {
             runSpacing: 8,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   item.category,
-                  style: const TextStyle(color: Color(0xFF045436), fontSize: 12),
+                  style: const TextStyle(
+                    color: Color(0xFF045436),
+                    fontSize: 12,
+                  ),
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   item.location,
-                  style: const TextStyle(color: Color(0xFF045436), fontSize: 12),
+                  style: const TextStyle(
+                    color: Color(0xFF045436),
+                    fontSize: 12,
+                  ),
                 ),
               ),
-              StatusPill(
-                label: item.isFound ? 'Ditemukan' : 'Kehilangan',
-                color: statusColor,
-              ),
+              StatusPill(label: item.statusLabel, color: statusColor),
             ],
           ),
           if (item.color != null || item.brand != null) ...[

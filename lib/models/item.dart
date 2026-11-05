@@ -1,4 +1,7 @@
 import 'dart:typed_data';
+
+enum ReportStatus { active, inVerification, resolved, expired, removed }
+
 class Item {
   final String id;
   final String nameItem;
@@ -14,9 +17,16 @@ class Item {
   final String? brand;
   final String? reporter;
   final String? iconCategory;
+  final String? category2;
+  final String? ownerId;
+  final List<String> verificationDetails;
+  final String? whatsapp;
+  final double? latitude;
+  final double? longitude;
+  ReportStatus status;
   final bool isOwner;
 
-  const Item({
+  Item({
     required this.id,
     required this.nameItem,
     required this.subtitle,
@@ -31,6 +41,13 @@ class Item {
     this.brand,
     this.reporter,
     this.iconCategory,
+    this.category2,
+    this.ownerId,
+    this.verificationDetails = const [],
+    this.whatsapp,
+    this.latitude,
+    this.longitude,
+    this.status = ReportStatus.active,
     this.isOwner = false,
   });
 
@@ -43,4 +60,12 @@ class Item {
         '${date.hour.toString().padLeft(2, '0')}:'
         '${date.minute.toString().padLeft(2, '0')}';
   }
+
+  String get statusLabel => switch (status) {
+    ReportStatus.active => isFound ? 'Ditemukan' : 'Kehilangan',
+    ReportStatus.inVerification => 'Dalam Verifikasi',
+    ReportStatus.resolved => 'Selesai',
+    ReportStatus.expired => 'Kedaluwarsa',
+    ReportStatus.removed => 'Disembunyikan',
+  };
 }

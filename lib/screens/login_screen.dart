@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../routes/app_routes.dart';
+import '../services/app_session.dart';
 import '../utils/validators.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    AppSession.signIn(_identityController.text);
     Navigator.pushReplacementNamed(context, AppRoutes.home);
   }
 

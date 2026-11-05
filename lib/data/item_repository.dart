@@ -17,6 +17,7 @@ class ItemRepository {
         location: lostItem.lokasi,
         isFound: false,
         category: _categoryFor(lostItem.iconCategory),
+        ownerId: 'reporter:${lostItem.id}',
         eventDate: _dateFor(lostItem.tanggalHilang),
         color: lostItem.warna,
         brand: lostItem.merek,
@@ -39,7 +40,40 @@ class ItemRepository {
       color: 'Hijau',
       brand: 'smätt',
       reporter: 'Pelapor',
+      ownerId: 'reporter:sample-tumbler',
       assetPath: 'assets/images/tumbler.jpg',
+    ),
+    Item(
+      id: 'found-laptop-demo',
+      nameItem: 'Laptop ASUS',
+      subtitle: 'Ditemukan di Perpustakaan Pusat',
+      description: 'Laptop warna silver ditemukan di area baca perpustakaan.',
+      location: 'Perpustakaan Pusat',
+      isFound: true,
+      category: 'Elektronik',
+      eventDate: DateTime(2026, 10, 10, 14),
+      color: 'Silver',
+      brand: 'ASUS',
+      reporter: 'Pemilik laporan',
+      ownerId: 'user:founder@student.unand.ac.id',
+      verificationDetails: const ['Ada stiker kecil di dekat engsel kiri.'],
+    ),
+    Item(
+      id: 'found-wallet-demo',
+      nameItem: 'Dompet kulit',
+      subtitle: 'Ditemukan di Kantin Fakultas Teknik',
+      description: 'Dompet kulit coklat ditemukan di meja kantin.',
+      location: 'Kantin Fakultas Teknik',
+      isFound: true,
+      category: 'Dompet & Kartu',
+      eventDate: DateTime(2026, 10, 11, 12),
+      color: 'Coklat',
+      brand: 'Fossil',
+      reporter: 'Pemilik laporan',
+      ownerId: 'user:founder@student.unand.ac.id',
+      verificationDetails: const [
+        'Di dalamnya ada gantungan kunci berbentuk daun.',
+      ],
     ),
   ];
 
@@ -55,8 +89,13 @@ class ItemRepository {
       'storage' ||
       'charger' ||
       'tablet' => 'Elektronik',
-      'book' => 'Dokumen',
-      _ => 'Aksesori',
+      'wallet' => 'Dompet & Kartu',
+      'book' => 'Dokumen & Perlengkapan Kuliah',
+      'bag' => 'Tas & Ransel',
+      'key' || 'bicycle' => 'Kunci & Kendaraan',
+      'bottle' => 'Botol & Perlengkapan Makan',
+      'jacket' || 'glasses' || 'watch' => 'Pakaian & Aksesori',
+      _ => 'Lainnya',
     };
   }
 

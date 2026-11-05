@@ -9,6 +9,8 @@ import '../screens/login_screen.dart';
 import '../screens/not_found_screen.dart';
 import '../screens/add_report_screen.dart';
 import '../screens/lost_item_list_screen.dart';
+import '../screens/matching_screen.dart';
+import '../services/matching_service.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -21,13 +23,15 @@ class AppRoutes {
   static const String addReport = '/laporan/tambah';
   static const String chat = '/chat';
   static const String advancedSearch = '/pencarian-lanjutan';
+  static const String matches = '/matching';
 
   // Fungsi yang dipanggil MaterialApp untuk membuat rute berdasarkan settings
   // Route<dynamic>? berarti fungsi dapat mengembalikan rute dengan hasil berbagai tipe atau null jika nama rutenya tidak cocok.
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case login:
-        return MaterialPageRoute<void>( // Tipe void berarti rute ini tidak mengembalikan data melalui Navigator.pop
+        return MaterialPageRoute<void>(
+          // Tipe void berarti rute ini tidak mengembalikan data melalui Navigator.pop
           builder: (_) => const LoginScreen(),
           settings: settings, // Meneruskan informasi rute, termasuk nama dan argumen, ke objek rute
         );
@@ -41,8 +45,21 @@ class AppRoutes {
           builder: (_) => const LostItemListScreen(),
           settings: settings,
         );
+      case matches:
+        final arguments = settings.arguments;
+        if (arguments is MatchingService) {
+          return MaterialPageRoute<void>(
+            builder: (_) => MatchingScreen(service: arguments),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => NotFoundScreen(routeName: settings.name),
+          settings: settings,
+        );
       case detail:
-        final arguments = settings.arguments; // Mengambil argumen yang diteruskan ke rute ini
+        final arguments =
+            settings.arguments; // Mengambil argumen yang diteruskan ke rute ini
         if (arguments is Item) {
           return MaterialPageRoute<String>(
             builder: (_) => DetailScreen(item: arguments),
@@ -59,9 +76,11 @@ class AppRoutes {
           settings: settings,
         );*/
       case addReport:
-        final arguments = settings.arguments; // Mengambil argumen yang diteruskan ke rute ini
-        if (arguments is bool) { // Memeriksa apakah argumen yang diteruskan adalah boolean
-          return MaterialPageRoute<Item>( 
+        final arguments =
+            settings.arguments; // Mengambil argumen yang diteruskan ke rute ini
+        if (arguments is bool) {
+          // Memeriksa apakah argumen yang diteruskan adalah boolean
+          return MaterialPageRoute<Item>(
             builder: (_) => AddReportScreen(isFound: arguments),
             settings: settings,
           );
@@ -87,7 +106,7 @@ class AppRoutes {
     }
   }
 
-  static Route<dynamic> onUnknownRoute(RouteSettings settings) { 
+  static Route<dynamic> onUnknownRoute(RouteSettings settings) {
     return MaterialPageRoute<void>(
       builder: (_) => NotFoundScreen(routeName: settings.name),
       settings: settings,

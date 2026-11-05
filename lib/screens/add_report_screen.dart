@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../models/item.dart';
 import '../services/device_image_picker.dart';
+import '../services/app_session.dart';
 import '../utils/validators.dart';
 
 class AddReportScreen extends StatefulWidget {
@@ -16,15 +17,31 @@ class AddReportScreen extends StatefulWidget {
 
 class _AddReportScreenState extends State<AddReportScreen> {
   static const _green = Color(0xFF045436);
-  static const _categories = ['Elektronik', 'Aksesori', 'Dokumen', 'Lainnya'];
+  static const _categories = [
+    'Dompet & Kartu',
+    'Tas & Ransel',
+    'Elektronik',
+    'Kunci & Kendaraan',
+    'Dokumen & Perlengkapan Kuliah',
+    'Pakaian & Aksesori',
+    'Botol & Perlengkapan Makan',
+    'Perlengkapan Ibadah',
+    'Perlengkapan Olahraga',
+    'Lainnya',
+  ];
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
+  final _colorController = TextEditingController();
+  final _brandController = TextEditingController();
+  final _verificationController = TextEditingController();
+  final _whatsappController = TextEditingController();
   final _imagePicker = const DeviceImagePicker();
 
   String? _category;
+  String? _category2;
   bool _hasAttemptedSubmit = false;
   bool _isSubmitting = false;
   bool _isPickingPhoto = false;
@@ -38,6 +55,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
+    _colorController.dispose();
+    _brandController.dispose();
+    _verificationController.dispose();
+    _whatsappController.dispose();
     super.dispose();
   }
 
@@ -137,6 +158,14 @@ class _AddReportScreenState extends State<AddReportScreen> {
             _locationController.text.trim().substring(1),
         isFound: widget.isFound,
         category: _category!,
+        category2: _category2,
+        color: _optionalValue(_colorController.text),
+        brand: _optionalValue(_brandController.text),
+        verificationDetails: _verificationController.text.trim().isEmpty
+            ? const []
+            : [_verificationController.text.trim()],
+        whatsapp: _optionalValue(_whatsappController.text),
+        ownerId: AppSession.userId,
         eventDate: eventDateTime,
         imageData: _imageData,
         isOwner: true,
@@ -185,6 +214,9 @@ class _AddReportScreenState extends State<AddReportScreen> {
     return '${_eventTime.hour.toString().padLeft(2, '0')}:'
         '${_eventTime.minute.toString().padLeft(2, '0')}';
   }
+
+  String? _optionalValue(String value) =>
+      value.trim().isEmpty ? null : value.trim();
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +309,31 @@ class _AddReportScreenState extends State<AddReportScreen> {
                   onChanged:
                       _isSubmitting // m
                       ? null
-                      : (value) => setState(() => _category = value),
+                      : (value) => setState(() {
+                          _category = value;
+                          if (_category2 == value) _category2 = null;
+                        }),
+                ),
+                const SizedBox(height: 12),
+                _fieldLabel('Kategori kedua (opsional)'),
+                const SizedBox(height: 7),
+                DropdownButtonFormField<String>(
+                  key: const Key('report-category-secondary'),
+                  initialValue: _category2,
+                  hint: const Text('Pilih jika barang gabungan'),
+                  decoration: _inputDecoration(null),
+                  items: _categories
+                      .where((category) => category != _category)
+                      .map(
+                        (category) => DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _isSubmitting
+                      ? null
+                      : (value) => setState(() => _category2 = value),
                 ),
                 const SizedBox(height: 12),
                 _fieldLabel('Deskripsi', required: true),
@@ -294,6 +350,43 @@ class _AddReportScreenState extends State<AddReportScreen> {
                   decoration: _inputDecoration(
                     'Jelaskan ciri-ciri barang secara detail',
                   ),
+                ),
+                const SizedBox(height: 12),
+                _fieldLabel('Detail pembeda rahasia'),
+                const SizedBox(height: 7),
+                TextFormField(
+                  key: const Key('report-verification-detail'),
+                  controller: _verificationController,
+                  enabled: !_isSubmitting,
+                  minLines: 2,
+                  maxLines: 3,
+                  validator: widget.isFound
+                      ? (value) => Validators.requiredField(
+                          value,
+                          fieldName: 'Detail pembeda rahasia',
+                        )
+                      : null,
+                  decoration: _inputDecoration(
+                    widget.isFound
+                        ? 'Wajib diisi; hanya terlihat saat meninjau klaim'
+                        : 'Ciri yang hanya diketahui pemilik (opsional)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _fieldLabel('Warna (opsional)'),
+                const SizedBox(height: 7),
+                TextFormField(
+                  controller: _colorController,
+                  enabled: !_isSubmitting,
+                  decoration: _inputDecoration('Contoh: Hitam'),
+                ),
+                const SizedBox(height: 12),
+                _fieldLabel('Merek (opsional)'),
+                const SizedBox(height: 7),
+                TextFormField(
+                  controller: _brandController,
+                  enabled: !_isSubmitting,
+                  decoration: _inputDecoration('Contoh: ASUS'),
                 ),
                 const SizedBox(height: 12),
                 _fieldLabel('Waktu Kejadian'),
@@ -341,6 +434,15 @@ class _AddReportScreenState extends State<AddReportScreen> {
                         ? 'Contoh: Kantin Unand'
                         : 'Contoh: Perpustakaan Unand',
                   ),
+                ),
+                const SizedBox(height: 12),
+                _fieldLabel('WhatsApp (opsional, tidak dipublikasikan)'),
+                const SizedBox(height: 7),
+                TextFormField(
+                  controller: _whatsappController,
+                  enabled: !_isSubmitting,
+                  keyboardType: TextInputType.phone,
+                  decoration: _inputDecoration('Contoh: 08xxxxxxxxxx'),
                 ),
                 const SizedBox(height: 12),
                 _fieldLabel('Foto Barang'),

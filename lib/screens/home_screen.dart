@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../data/app_data.dart';
 import '../data/item_repository.dart';
 import '../models/item.dart';
 import '../routes/app_routes.dart';
+import '../services/app_session.dart';
+import '../services/matching_service.dart';
 import '../widgets/item_visuals.dart';
 import '../widgets/state_views.dart';
 
@@ -17,25 +22,33 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  
   late final ItemRepository _repository;
+  late final MatchingService _matchingService;
+  Timer? _matchingTimer;
   final _searchController = TextEditingController();
   ViewStatus _status = ViewStatus.loading;
   List<Item> _items = [];
   String _errorMessage = '';
   String _selectedFilter = 'Semua';
-  
+
   final bool _simulateError = false;
 
   @override
   void initState() {
     super.initState();
-    _repository = widget.repository ?? ItemRepository();
+    _repository = widget.repository ?? AppData.repository;
+    _matchingService = identical(_repository, AppData.repository)
+        ? AppData.matchingService
+        : MatchingService(items: _repository.items);
+    _matchingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _matchingService.refreshMatches();
+    });
     _loadItems();
   }
 
   @override
   void dispose() {
+    _matchingTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -45,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final items = await _repository.fetchItems(simulateError: _simulateError);
       if (!mounted) return;
+      _matchingService.refreshMatches();
       setState(() {
         _items = [...items];
         _status = ViewStatus.success;
@@ -126,9 +140,9 @@ class _HomeScreenState extends State<HomeScreen> {
       arguments: isFound,
     );
     if (!mounted || item == null) return;
+    _matchingService.addReport(item);
     setState(() {
-      _repository.items.insert(0, item);
-      _items.insert(0, item);
+      _items = [..._repository.items];
       _selectedFilter = 'Semua';
       _searchController.clear();
     });
@@ -148,6 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _repository.items.removeWhere((entry) => entry.id == deletedId);
       _items.removeWhere((entry) => entry.id == deletedId);
     });
+    _matchingService.refreshMatches();
   }
 
   @override
@@ -159,9 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             _buildHeader(),
-            Expanded(
-              child: _buildContent(),
-            ),
+            Expanded(child: _buildContent()),
           ],
         ),
       ),
@@ -197,8 +210,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Selamat Datang',
-                        style: TextStyle(color: scheme.secondary, fontSize: 12)),
+                    Text(
+                      'Selamat Datang',
+                      style: TextStyle(color: scheme.secondary, fontSize: 12),
+                    ),
                     Text(
                       'Mari Temukan Barangmu!',
                       style: TextStyle(
@@ -212,8 +227,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               IconButton(
                 tooltip: 'Pencarian berbobot',
-                onPressed: () =>
-                    Navigator.pushNamed<void>(context, AppRoutes.advancedSearch),
+                onPressed: () => Navigator.pushNamed<void>(
+                  context,
+                  AppRoutes.advancedSearch,
+                ),
                 color: Colors.white,
                 icon: const Icon(Icons.manage_search),
               ),
@@ -247,6 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return _buildReportList();
   }
+
   // --- Daftar laporan barang ---
   Widget _buildReportList() {
     final items = _visibleItems;
@@ -272,6 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
+
   // --- Kartu laporan barang ---
   Widget _buildReportCallout() {
     return Material(
@@ -287,11 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.search,
-                color: Color(0xFFC20E18),
-                size: 56,
-              ),
+              const Icon(Icons.search, color: Color(0xFFC20E18), size: 56),
               const SizedBox(height: 2),
               const Text(
                 'Laporkan',
@@ -315,6 +330,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
   // --- Filter laporan barang ---
   Widget _buildFilters() {
     const filters = ['Semua', 'Kehilangan', 'Ditemukan'];
@@ -348,11 +364,16 @@ class _HomeScreenState extends State<HomeScreen> {
       }).toList(),
     );
   }
+
   // --- Ringkasan informasi ---
   Widget _buildItemCard(Item item) {
-    final statusColor = item.isFound
-        ? const Color(0xFF045436)
-        : const Color(0xFFEF4444);
+    final statusColor = switch (item.status) {
+      ReportStatus.active =>
+        item.isFound ? const Color(0xFF045436) : const Color(0xFFEF4444),
+      ReportStatus.inVerification => const Color(0xFFB45309),
+      ReportStatus.resolved => const Color(0xFF64748B),
+      ReportStatus.expired || ReportStatus.removed => const Color(0xFF64748B),
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -392,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(width: 4),
                             StatusPill(
-                              label: item.isFound ? 'Ditemukan' : 'Kehilangan',
+                              label: item.statusLabel,
                               color: statusColor,
                             ),
                           ],
@@ -459,6 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
   // --- Bar navigasi bawah ---
   Widget _buildBottomBar() {
     final scheme = Theme.of(context).colorScheme;
@@ -477,8 +499,27 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(Icons.home, color: scheme.primary, size: 29),
             Icon(Icons.map_outlined, color: scheme.primary, size: 27),
             const SizedBox(width: 42),
-            Icon(Icons.notifications_none, color: scheme.primary, size: 28),
-            Icon(Icons.account_circle_outlined, color: scheme.primary, size: 29),
+            IconButton(
+              tooltip: 'Matching, klaim & notifikasi',
+              onPressed: () => Navigator.pushNamed<void>(
+                context,
+                AppRoutes.matches,
+                arguments: _matchingService,
+              ),
+              icon: Icon(Icons.notifications_none, color: scheme.primary),
+            ),
+            IconButton(
+              tooltip: 'Keluar',
+              onPressed: () {
+                AppSession.signOut();
+                Navigator.pushNamedAndRemoveUntil<void>(
+                  context,
+                  AppRoutes.login,
+                  (route) => false,
+                );
+              },
+              icon: Icon(Icons.account_circle_outlined, color: scheme.primary),
+            ),
           ],
         ),
       ),

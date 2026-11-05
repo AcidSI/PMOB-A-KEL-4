@@ -27,9 +27,20 @@ flutter test
   tersedia dari beranda.
 - Pengguna dapat membuat laporan kehilangan atau penemuan, melihat detail, dan
   membuka halaman chat pelapor.
+- Matching lost/found memakai skor teks (40%), lokasi (35%), waktu (25%), dan
+  pengali kategori; hasil ≥60% tampil sebagai kandidat, dengan maksimal lima
+  kandidat per laporan.
+- Alur klaim menyediakan jawaban detail pembeda rahasia, alasan/bukti,
+  komentar verifikasi yang tidak dapat diubah, keputusan pemilik, persetujuan
+  berbagi kontak, dan konfirmasi serah terima oleh kedua pihak.
+- Halaman Matching memuat kandidat, klaim masuk, dan notifikasi dalam aplikasi;
+  pengguna dapat mengabaikan kandidat yang tidak relevan.
 - Foto barang dapat dipilih dari galeri pada platform yang didukung oleh
   `image_picker`.
 
-Data contoh dan laporan yang dibuat hanya disimpan selama aplikasi berjalan.
-Form masuk saat ini hanya melakukan validasi di sisi aplikasi; belum terhubung
-ke layanan autentikasi atau penyimpanan backend.
+**Batas prototipe:** data, klaim, komentar, notifikasi, dan pembatasan anti-scam
+masih disimpan dalam memori aplikasi dan hilang saat aplikasi dimulai ulang.
+Validasi email kampus saat ini hanya simulasi lokal; belum ada OTP, backend,
+penyimpanan terenkripsi, notifikasi sistem, sinkronisasi antarperangkat, atau
+penegakan batas klaim di server. Implementasi ini bukan pengganti kontrol
+keamanan sisi server yang dijelaskan PRD.
