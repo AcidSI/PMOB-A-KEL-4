@@ -26,6 +26,12 @@ void main() {
       expect(fallbackCoord.latitude, closeTo(CampusLocations.unandCenter.latitude, 0.01));
       expect(fallbackCoord.longitude, closeTo(CampusLocations.unandCenter.longitude, 0.01));
     });
+
+    test('getNearestLandmark correctly identifies closest Unand building', () {
+      final perpusPos = const LatLng(-0.91462, 100.45981);
+      final landmark = CampusLocations.getNearestLandmark(perpusPos);
+      expect(landmark, 'Perpustakaan Pusat');
+    });
   });
 
   group('LocationService Tests (Modul 2 - FR-L01 & FR-L06)', () {
@@ -100,6 +106,36 @@ void main() {
         category: 'Elektronik',
       );
       expect(itemWithoutCoords.hasCoordinates, isFalse);
+    });
+  });
+
+  group('Word boundary search accuracy test (Issue #4)', () {
+    test('Regex boundary \\btas matches "Tas Ransel" but excludes "Universitas" and "Fakultas"', () {
+      final token = 'tas';
+      final regex = RegExp(r'\b' + RegExp.escape(token), caseSensitive: false);
+
+      // Should match:
+      expect(regex.hasMatch('Tas Ransel'), isTrue);
+      expect(regex.hasMatch('tas selempang hitam'), isTrue);
+      expect(regex.hasMatch('Tas & Ransel'), isTrue);
+
+      // MUST NOT match words ending with tas or having tas in the middle:
+      expect(regex.hasMatch('Universitas Andalas'), isFalse);
+      expect(regex.hasMatch('Kantin Fakultas Teknik'), isFalse);
+      expect(regex.hasMatch('Tumbler berwarna hijau di Perpustakaan Universitas'), isFalse);
+      expect(regex.hasMatch('komunitas mahasiswa'), isFalse);
+      expect(regex.hasMatch('kualitas terbaik'), isFalse);
+    });
+  });
+
+  group('Campus Location Picker Tests (Issue #5 & Google Maps Style Picker)', () {
+    test('CampusLocations.getNearestLandmarkDetails returns accurate building and distance', () {
+      final perpusPos = const LatLng(-0.91462, 100.45981);
+      final details = CampusLocations.getNearestLandmarkDetails(perpusPos);
+
+      expect(details.name, 'Perpustakaan Pusat');
+      expect(details.distanceMeters, lessThan(5.0));
+      expect(details.coordinates.latitude, closeTo(-0.91462, 0.0001));
     });
   });
 }

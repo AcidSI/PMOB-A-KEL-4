@@ -44,7 +44,7 @@ class ItemRepository {
           'Universitas Andalas.',
       location: 'Perpustakaan',
       isFound: false,
-      category: 'Lainnya',
+      category: 'Botol & Perlengkapan Makan',
       color: 'Hijau',
       brand: 'smätt',
       reporter: 'Pelapor',
@@ -60,7 +60,7 @@ class ItemRepository {
           'Ditemukan Kartu Tanda Mahasiswa atas nama Rian Pratama jurusan Sistem Informasi di meja baca lantai 2.',
       location: 'Perpustakaan Pusat',
       isFound: true,
-      category: 'Dokumen',
+      category: 'Dompet & Kartu',
       eventDate: DateTime(2026, 10, 14, 11, 30),
       reporter: 'Petugas Perpus',
       iconCategory: 'book',
@@ -75,7 +75,7 @@ class ItemRepository {
           'Kunci motor Honda dengan gantungan tali hitam ditemukan di dekat pos satpam parkiran FE.',
       location: 'Parkiran Fakultas Ekonomi',
       isFound: true,
-      category: 'Aksesori',
+      category: 'Kunci & Kendaraan',
       eventDate: DateTime(2026, 10, 15, 14, 15),
       reporter: 'Satpam FE',
       iconCategory: 'key',
@@ -90,7 +90,7 @@ class ItemRepository {
           'Botol minum Tupperware warna biru toska tertinggal di bawah kursi baris depan.',
       location: 'Ruang Kelas GKB 1',
       isFound: true,
-      category: 'Lainnya',
+      category: 'Botol & Perlengkapan Makan',
       eventDate: DateTime(2026, 10, 16, 10, 00),
       reporter: 'Cleaning Service',
       iconCategory: 'tumbler',
@@ -112,8 +112,13 @@ class ItemRepository {
       'storage' ||
       'charger' ||
       'tablet' => 'Elektronik',
-      'book' => 'Dokumen',
-      _ => 'Aksesori',
+      'wallet' => 'Dompet & Kartu',
+      'bag' => 'Tas & Ransel',
+      'key' || 'bicycle' => 'Kunci & Kendaraan',
+      'book' => 'Dokumen & Perlengkapan Kuliah',
+      'jacket' || 'glasses' || 'watch' => 'Pakaian & Aksesori',
+      'tumbler' => 'Botol & Perlengkapan Makan',
+      _ => 'Lainnya',
     };
   }
 

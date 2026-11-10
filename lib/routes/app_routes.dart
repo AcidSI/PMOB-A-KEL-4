@@ -10,6 +10,7 @@ import '../screens/not_found_screen.dart';
 import '../screens/add_report_screen.dart';
 import '../screens/lost_item_list_screen.dart';
 import '../screens/map_discovery_screen.dart';
+import '../screens/campus_location_picker_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -23,6 +24,7 @@ class AppRoutes {
   static const String chat = '/chat';
   static const String advancedSearch = '/pencarian-lanjutan';
   static const String mapDiscovery = '/peta-discovery';
+  static const String locationPicker = '/lokasi/pilih';
 
   // Fungsi yang dipanggil MaterialApp untuk membuat rute berdasarkan settings
   // Route<dynamic>? berarti fungsi dapat mengembalikan rute dengan hasil berbagai tipe atau null jika nama rutenya tidak cocok.
@@ -48,6 +50,21 @@ class AppRoutes {
         }
         return MaterialPageRoute<void>(
           builder: (_) => const MapDiscoveryScreen(),
+          settings: settings,
+        );
+      case locationPicker:
+        final arguments = settings.arguments;
+        if (arguments is Map<String, dynamic>) {
+          return MaterialPageRoute<CampusLocationResult>(
+            builder: (_) => CampusLocationPickerScreen(
+              initialCenter: arguments['initialCenter'],
+              initialLocationName: arguments['initialLocationName'],
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute<CampusLocationResult>(
+          builder: (_) => const CampusLocationPickerScreen(),
           settings: settings,
         );
       case advancedSearch:

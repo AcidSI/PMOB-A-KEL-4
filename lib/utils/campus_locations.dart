@@ -34,6 +34,15 @@ class CampusLocations {
     'Gedung PKM': LatLng(-0.91350, 100.45850),
     'Fakultas Hukum': LatLng(-0.91750, 100.45800),
     'Fakultas Kedokteran': LatLng(-0.91600, 100.46300),
+    'Fakultas Pertanian': LatLng(-0.91650, 100.46050),
+    'Fakultas Peternakan': LatLng(-0.91850, 100.46200),
+    'Fakultas Farmasi': LatLng(-0.91620, 100.46500),
+    'Fakultas Ilmu Budaya': LatLng(-0.91780, 100.46100),
+    'Fakultas Keperawatan': LatLng(-0.91580, 100.46400),
+    'Auditorium Unand': LatLng(-0.91610, 100.45720),
+    'Danau Unand': LatLng(-0.91300, 100.45950),
+    'Poliklinik Unand': LatLng(-0.91420, 100.45750),
+    'Gerbang Utama Unand': LatLng(-0.92300, 100.44800),
   };
 
   /// Mendapatkan koordinat dari nama lokasi teks.
@@ -98,6 +107,54 @@ class CampusLocations {
 
     // Fallback dengan jitter kecil agar marker tidak menumpuk di 1 pixel yang sama persis
     return _generateJitteredCenter(locationName + fallbackSeed);
+  }
+
+  /// Daftar nama gedung/area kampus resmi terstandarisasi di Universitas Andalas
+  static List<String> get landmarkNames => landmarks.keys.toList();
+
+  /// Mencari nama gedung terdekat dari koordinat posisi yang diberikan
+  static String getNearestLandmark(LatLng position) {
+    const distanceCalc = Distance();
+    String closestName = 'Kawasan Kampus Unand';
+    double minDistance = double.infinity;
+
+    for (final entry in landmarks.entries) {
+      final d = distanceCalc.as(LengthUnit.Meter, position, entry.value);
+      if (d < minDistance) {
+        minDistance = d;
+        closestName = entry.key;
+      }
+    }
+
+    if (minDistance <= 250) {
+      return closestName;
+    }
+    return '$closestName (sekitar ${minDistance.round()}m)';
+  }
+
+  /// Detail lengkap gedung/area terdekat (nama, jarak dalam meter, dan koordinat acuan gedung)
+  static ({String name, double distanceMeters, LatLng coordinates}) getNearestLandmarkDetails(
+    LatLng position,
+  ) {
+    const distanceCalc = Distance();
+    String closestName = 'Kawasan Kampus Unand';
+    LatLng closestCoords = unandCenter;
+    double minDistance = double.infinity;
+
+    for (final entry in landmarks.entries) {
+      final d = distanceCalc.as(LengthUnit.Meter, position, entry.value);
+      if (d < minDistance) {
+        minDistance = d;
+        closestName = entry.key;
+        closestCoords = entry.value;
+      }
+    }
+
+    return (
+      name: closestName,
+      distanceMeters: minDistance,
+      coordinates: closestCoords,
+    );
   }
 
   /// Menghasilkan koordinat Unand center dengan pergeseran deterministik kecil

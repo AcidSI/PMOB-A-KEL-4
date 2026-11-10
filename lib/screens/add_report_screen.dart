@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../models/item.dart';
+import '../routes/app_routes.dart';
 import '../services/device_image_picker.dart';
 import '../utils/validators.dart';
 import '../utils/campus_locations.dart';
+import '../services/location_service.dart';
+import 'campus_location_picker_screen.dart';
 
 class AddReportScreen extends StatefulWidget {
   final bool isFound; // parameter untuk menentukan apakah laporan ini untuk barang yang ditemukan atau hilang
@@ -17,7 +21,20 @@ class AddReportScreen extends StatefulWidget {
 
 class _AddReportScreenState extends State<AddReportScreen> {
   static const _green = Color(0xFF045436);
-  static const _categories = ['Elektronik', 'Aksesori', 'Dokumen', 'Lainnya'];
+  static const _categories = [
+    'Elektronik',
+    'Dompet & Kartu',
+    'Tas & Ransel',
+    'Kunci & Kendaraan',
+    'Dokumen & Perlengkapan Kuliah',
+    'Pakaian & Aksesori',
+    'Botol & Perlengkapan Makan',
+    'Perlengkapan Ibadah',
+    'Perlengkapan Olahraga',
+    'Dokumen',
+    'Aksesori',
+    'Lainnya',
+  ];
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -29,6 +46,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
   bool _hasAttemptedSubmit = false;
   bool _isSubmitting = false;
   bool _isPickingPhoto = false;
+  bool _isDetectingLocation = false;
+  double? _selectedLatitude;
+  double? _selectedLongitude;
+  String? _selectedBuildingName;
   String? _errorMessage;
   Uint8List? _imageData;
   DateTime _eventDate = DateTime.now();
@@ -97,6 +118,78 @@ class _AddReportScreenState extends State<AddReportScreen> {
     }
   }
 
+  Future<void> _detectGpsLocation() async {
+    if (_isDetectingLocation || _isSubmitting) return;
+    setState(() => _isDetectingLocation = true);
+    try {
+      const locationService = LocationService();
+      final res = await locationService.determinePosition();
+      if (!mounted) return;
+      if (res.isSuccess && res.position != null) {
+        final landmark = CampusLocations.getNearestLandmark(res.position!);
+        setState(() {
+          _locationController.text = landmark;
+          _selectedLatitude = res.position!.latitude;
+          _selectedLongitude = res.position!.longitude;
+          _selectedBuildingName = landmark;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lokasi terdeteksi: $landmark'),
+            backgroundColor: _green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message),
+            backgroundColor: Colors.grey.shade800,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDetectingLocation = false);
+    }
+  }
+
+  Future<void> _openCampusLocationPicker() async {
+    if (_isSubmitting) return;
+    FocusScope.of(context).unfocus();
+
+    final result = await Navigator.pushNamed<CampusLocationResult>(
+      context,
+      AppRoutes.locationPicker,
+      arguments: {
+        'initialLocationName': _locationController.text.trim(),
+        'initialCenter': _selectedLatitude != null && _selectedLongitude != null
+            ? LatLng(_selectedLatitude!, _selectedLongitude!)
+            : null,
+      },
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _locationController.text = result.locationName;
+      _selectedLatitude = result.latitude;
+      _selectedLongitude = result.longitude;
+      _selectedBuildingName = result.buildingName;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Lokasi terpilih: ${result.locationName}'),
+        backgroundColor: _green,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   Future<void> _submitReport() async {
     if (_isSubmitting) return;
     FocusScope.of(context).unfocus();
@@ -141,8 +234,10 @@ class _AddReportScreenState extends State<AddReportScreen> {
         eventDate: eventDateTime,
         imageData: _imageData,
         isOwner: true,
-        latitude: CampusLocations.getCoordinates(_locationController.text.trim()).latitude,
-        longitude: CampusLocations.getCoordinates(_locationController.text.trim()).longitude,
+        latitude: _selectedLatitude ??
+            CampusLocations.getCoordinates(_locationController.text.trim()).latitude,
+        longitude: _selectedLongitude ??
+            CampusLocations.getCoordinates(_locationController.text.trim()).longitude,
       );
     } catch (error) {
       if (!mounted) return;
@@ -327,9 +422,31 @@ class _AddReportScreenState extends State<AddReportScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _fieldLabel(
-                  widget.isFound ? 'Lokasi Ditemukan' : 'Lokasi Terakhir',
-                  required: true,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _fieldLabel(
+                      widget.isFound ? 'Lokasi Ditemukan' : 'Lokasi Terakhir',
+                      required: true,
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: _green,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed:
+                          _isSubmitting ? null : _openCampusLocationPicker,
+                      icon: const Icon(Icons.map_rounded, size: 16),
+                      label: const Text(
+                        'Pilih di Peta Kampus',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 7),
                 TextFormField(
@@ -339,10 +456,137 @@ class _AddReportScreenState extends State<AddReportScreen> {
                   textCapitalization: TextCapitalization.sentences,
                   textInputAction: TextInputAction.done,
                   validator: Validators.reportLocation,
+                  onChanged: (val) {
+                    if (_selectedBuildingName != null &&
+                        val != _selectedBuildingName) {
+                      setState(() {
+                        _selectedLatitude = null;
+                        _selectedLongitude = null;
+                        _selectedBuildingName = null;
+                      });
+                    }
+                  },
                   decoration: _inputDecoration(
                     widget.isFound
-                        ? 'Contoh: Kantin Unand'
-                        : 'Contoh: Perpustakaan Unand',
+                        ? 'Contoh: Kantin Fakultas Teknik'
+                        : 'Contoh: Perpustakaan Pusat',
+                  ).copyWith(
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Pilih di Peta Kampus',
+                          icon: const Icon(Icons.map_outlined, color: _green, size: 20),
+                          onPressed: _isSubmitting
+                              ? null
+                              : _openCampusLocationPicker,
+                        ),
+                        IconButton(
+                          tooltip: 'Deteksi GPS Sekarang',
+                          icon: _isDetectingLocation
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.my_location, color: _green, size: 20),
+                          onPressed: _isDetectingLocation || _isSubmitting
+                              ? null
+                              : _detectGpsLocation,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_selectedLatitude != null && _selectedLongitude != null) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0x33045436)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle, size: 14, color: _green),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Titik terhubung di peta: ${_selectedLatitude!.toStringAsFixed(4)}, ${_selectedLongitude!.toStringAsFixed(4)}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: _green,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: _openCampusLocationPicker,
+                          child: const Text(
+                            'Ubah',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _green,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.map, size: 14, color: _green),
+                          label: const Text(
+                            'Pilih di Peta',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: _isSubmitting ? null : _openCampusLocationPicker,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.my_location, size: 14, color: _green),
+                          label: const Text('GPS Terdekat', style: TextStyle(fontSize: 11)),
+                          onPressed: _isDetectingLocation || _isSubmitting
+                              ? null
+                              : _detectGpsLocation,
+                        ),
+                      ),
+                      ...CampusLocations.landmarkNames.take(8).map((landmark) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ActionChip(
+                            label: Text(landmark, style: const TextStyle(fontSize: 11)),
+                            onPressed: _isSubmitting
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _locationController.text = landmark;
+                                      final coords = CampusLocations.landmarks[landmark];
+                                      if (coords != null) {
+                                        _selectedLatitude = coords.latitude;
+                                        _selectedLongitude = coords.longitude;
+                                        _selectedBuildingName = landmark;
+                                      }
+                                    });
+                                  },
+                          ),
+                        );
+                      }),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),

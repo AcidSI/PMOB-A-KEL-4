@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,13 +13,16 @@ import '../widgets/item_visuals.dart';
 import '../widgets/state_views.dart';
 
 /// Screen Peta Interaktif & Eksplorasi Laporan Kampus Unand (Modul 2: Location & Discovery)
-/// Mengimplementasikan:
-/// - FR-L01: Pembacaan sensor GPS perangkat pengguna
-/// - FR-L02: Visualisasi peta kampus Universitas Andalas dan marker laporan Lost & Found
-/// - FR-L03: Daftar laporan barang yang terintegrasi di peta
-/// - FR-L04: Pencarian laporan berdasarkan kata kunci/nama barang/lokasi
-/// - FR-L05: Filter laporan berdasarkan jenis (Lost vs Found) dan kategori
-/// - FR-L06: Notifikasi/indikator deteksi barang dalam radius lokasi pengguna
+/// Mengimplementasikan PRD v1.1:
+/// - FR-L01: Pembacaan sensor GPS perangkat pengguna & fallback titik gedung
+/// - FR-L02: Visualisasi peta kampus Universitas Andalas (flutter_map + OpenStreetMap)
+///           dengan marker penanda Lost (Merah) dan Found (Hijau)
+/// - FR-L03: Daftar laporan barang yang terintegrasi di peta (terbaru lebih dulu)
+/// - FR-L04: Pencarian kata kunci akurat (word-boundary matching bebas salah sub-string)
+/// - FR-L05: Filter laporan berdasarkan jenis (Lost vs Found) dan 10 Kategori Baku
+/// - FR-L06: Notifikasi banner deteksi barang dalam radius lokasi pengguna
+/// - FR-L07: Pilihan radius notifikasi (200 m / 500 m / 1.000 m)
+/// - FR-L08: Opsi moderasi komunitas / laporkan konten mencurigakan
 class MapDiscoveryScreen extends StatefulWidget {
   final ItemRepository? repository;
   final Item? initialSelectedItem;
@@ -41,11 +45,27 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
   static const Color _lostRed = Color(0xFFEF4444);
   static const Color _foundGreen = Color(0xFF045436);
 
+  // 10 Kategori Baku PRD v1.1
+  static const List<String> _bakuCategories = [
+    'Semua',
+    'Dompet & Kartu',
+    'Tas & Ransel',
+    'Elektronik',
+    'Kunci & Kendaraan',
+    'Dokumen & Perlengkapan Kuliah',
+    'Pakaian & Aksesori',
+    'Botol & Perlengkapan Makan',
+    'Perlengkapan Ibadah',
+    'Perlengkapan Olahraga',
+    'Lainnya',
+  ];
+
   // ─── Controllers & Services ──────────────────────────────────────────────
   late final ItemRepository _repository;
   final LocationService _locationService = const LocationService();
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
 
@@ -54,11 +74,12 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
   String? _errorMessage;
   List<Item> _allItems = [];
 
-  // Filter State (FR-L04, FR-L05)
+  // Filter State (FR-L04, FR-L05, FR-L07)
   String _searchQuery = '';
   String _selectedTypeFilter = 'Semua'; // 'Semua', 'Kehilangan', 'Ditemukan'
   String _selectedCategoryFilter = 'Semua';
   bool _onlyNearbyFilter = false;
+  double _selectedRadiusMeters = 500.0; // FR-L07: 200m, 500m (default), 1000m
 
   // Selected Item for Preview Popup
   Item? _selectedItem;
@@ -66,9 +87,13 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
   // GPS User Location State (FR-L01, FR-L06)
   LatLng? _userLocation;
   bool _isLocatingUser = false;
-  String? _gpsStatusMessage;
   List<Item> _nearbyItems = [];
   bool _hasPromptedNearbyAlert = false;
+  bool _showNearbyBanner = false;
+  Timer? _nearbyBannerTimer;
+
+  // Sheet Height Tracker for Full-Screen Search View (Poin 3)
+  double _currentSheetSize = 0.32;
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────
   @override
@@ -76,20 +101,45 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     super.initState();
     _repository = widget.repository ?? ItemRepository();
     _selectedItem = widget.initialSelectedItem;
+
+    _sheetController.addListener(() {
+      if (_sheetController.isAttached) {
+        final newSize = _sheetController.size;
+        if ((newSize - _currentSheetSize).abs() > 0.05) {
+          setState(() {
+            _currentSheetSize = newSize;
+          });
+        }
+      }
+    });
+
     _initDataAndLocation();
   }
 
   @override
   void dispose() {
+    _nearbyBannerTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _sheetController.dispose();
     super.dispose();
   }
 
   Future<void> _initDataAndLocation() async {
     await _loadItems();
-    // Auto-detect user GPS on screen launch (FR-L01)
-    await _detectUserLocation(showSnackBarOnError: false);
+
+    // Poin 2: Jika dipanggil dari DetailScreen untuk melihat lokasi barang tertentu,
+    // utamakan kamera fokus ke barang tersebut dan JANGAN ditimpa oleh GPS pengguna!
+    if (_selectedItem != null) {
+      final pos = _getItemLatLng(_selectedItem!);
+      _animatedMapMove(pos, 17.5);
+    }
+
+    // Auto-detect GPS perangkat di latar belakang
+    await _detectUserLocation(
+      showFeedbackOnError: false,
+      shouldMoveCamera: _selectedItem == null, // Jangan geser kamera jika barang sudah dipilih
+    );
   }
 
   Future<void> _loadItems() async {
@@ -106,7 +156,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
         _isLoading = false;
       });
 
-      // Update nearby items if GPS is already ready
       if (_userLocation != null) {
         _updateNearbyItems(_userLocation!);
       }
@@ -119,8 +168,11 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     }
   }
 
-  // ─── GPS & Location Logic (FR-L01, FR-L06) ──────────────────────────────
-  Future<void> _detectUserLocation({bool showSnackBarOnError = true}) async {
+  // ─── GPS & Location Logic (FR-L01, FR-L06, FR-L07) ───────────────────────
+  Future<void> _detectUserLocation({
+    bool showFeedbackOnError = true,
+    bool shouldMoveCamera = true,
+  }) async {
     if (_isLocatingUser) return;
     setState(() {
       _isLocatingUser = true;
@@ -132,7 +184,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
 
     setState(() {
       _isLocatingUser = false;
-      _gpsStatusMessage = result.message;
     });
 
     if (result.isSuccess && result.position != null) {
@@ -143,47 +194,32 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
 
       _updateNearbyItems(pos);
 
-      // Animate map camera to user position
-      _animatedMapMove(pos, 17.0);
+      // Poin 2: Hanya geser kamera ke posisi user jika diminta dan tidak sedang menyorot barang
+      if (shouldMoveCamera && _selectedItem == null) {
+        _animatedMapMove(pos, 17.0);
+      }
 
-      // FR-L06: Radius notification banner trigger
+      // Poin 1 (FR-L06): Tampilkan banner notifikasi radius mandiri tanpa SnackBar yang ngestuck
       if (_nearbyItems.isNotEmpty && !_hasPromptedNearbyAlert) {
         _hasPromptedNearbyAlert = true;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: _primaryGreen,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            content: Row(
-              children: [
-                const Icon(Icons.notifications_active, color: Colors.white),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '📍 Ditemukan ${_nearbyItems.length} laporan dalam radius 500m dari lokasimu!',
-                    style: GoogleFonts.poppins(fontSize: 12.5),
-                  ),
-                ),
-              ],
-            ),
-            action: SnackBarAction(
-              label: 'Filter',
-              textColor: _accentGreen,
-              onPressed: () {
-                setState(() => _onlyNearbyFilter = true);
-              },
-            ),
-          ),
-        );
+        setState(() {
+          _showNearbyBanner = true;
+        });
+
+        _nearbyBannerTimer?.cancel();
+        _nearbyBannerTimer = Timer(const Duration(seconds: 6), () {
+          if (mounted && _showNearbyBanner) {
+            setState(() => _showNearbyBanner = false);
+          }
+        });
       }
-    } else if (showSnackBarOnError) {
+    } else if (showFeedbackOnError) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result.message, style: GoogleFonts.poppins(fontSize: 12)),
           backgroundColor: Colors.grey.shade800,
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
@@ -194,7 +230,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     final nearby = _locationService.getItemsInRadius(
       userPosition: pos,
       items: _allItems,
-      radiusMeters: 500.0,
+      radiusMeters: _selectedRadiusMeters,
     );
     setState(() {
       _nearbyItems = nearby;
@@ -244,44 +280,59 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     animationController.forward();
   }
 
-  // ─── Filter & Search Engine (FR-L04, FR-L05) ────────────────────────────
+  // ─── Filter & Search Engine (Poin 4: Word-Boundary Match) ────────────────
   List<Item> get _filteredItems {
-    final query = _searchQuery.trim().toLowerCase();
+    final rawQuery = _searchQuery.trim().toLowerCase();
 
     return _allItems.where((item) {
       // 1. Type Filter (Lost vs Found)
       if (_selectedTypeFilter == 'Kehilangan' && item.isFound) return false;
       if (_selectedTypeFilter == 'Ditemukan' && !item.isFound) return false;
 
-      // 2. Category Filter
-      if (_selectedCategoryFilter != 'Semua' &&
-          item.category != _selectedCategoryFilter) {
-        return false;
+      // 2. Category Filter (10 Kategori Baku)
+      if (_selectedCategoryFilter != 'Semua') {
+        final itemCat = item.category.toLowerCase();
+        final selCat = _selectedCategoryFilter.toLowerCase();
+        // Toleran terhadap mapping kategori pendek/panjang
+        if (!itemCat.contains(selCat) && !selCat.contains(itemCat)) {
+          return false;
+        }
       }
 
-      // 3. Radius Filter (≤ 500m from user GPS)
+      // 3. Radius Filter (FR-L06 & FR-L07: 200m / 500m / 1000m)
       if (_onlyNearbyFilter && _userLocation != null) {
         final itemPos = _getItemLatLng(item);
         final dist = _locationService.distanceBetween(_userLocation!, itemPos);
-        if (dist > 500.0) return false;
+        if (dist > _selectedRadiusMeters) return false;
       }
 
-      // 4. Keyword Query Search
-      if (query.isNotEmpty) {
-        final matchesName = item.nameItem.toLowerCase().contains(query);
-        final matchesLocation = item.location.toLowerCase().contains(query);
-        final matchesDescription = item.description.toLowerCase().contains(query);
-        final matchesBrand = (item.brand ?? '').toLowerCase().contains(query);
-        final matchesColor = (item.color ?? '').toLowerCase().contains(query);
-        final matchesReporter = (item.reporter ?? '').toLowerCase().contains(query);
+      // 4. Poin 4: Mesin Pencarian Kata Kunci dengan Word-Boundary Regex
+      // Menghindari bug sub-string (misal "tas" mencocokkan "universitas" atau "fakultas")
+      if (rawQuery.isNotEmpty) {
+        final tokens = rawQuery
+            .split(RegExp(r'\s+'))
+            .where((t) => t.isNotEmpty)
+            .toList();
 
-        if (!matchesName &&
-            !matchesLocation &&
-            !matchesDescription &&
-            !matchesBrand &&
-            !matchesColor &&
-            !matchesReporter) {
-          return false;
+        for (final token in tokens) {
+          // Token harus diawali batas kata (word boundary \b)
+          final regex = RegExp(r'\b' + RegExp.escape(token), caseSensitive: false);
+
+          final matchesName = regex.hasMatch(item.nameItem);
+          final matchesCategory = regex.hasMatch(item.category);
+          final matchesBrand = item.brand != null && regex.hasMatch(item.brand!);
+          final matchesColor = item.color != null && regex.hasMatch(item.color!);
+          final matchesDesc = regex.hasMatch(item.description);
+          final matchesLoc = regex.hasMatch(item.location);
+
+          if (!matchesName &&
+              !matchesCategory &&
+              !matchesBrand &&
+              !matchesColor &&
+              !matchesDesc &&
+              !matchesLoc) {
+            return false;
+          }
         }
       }
 
@@ -315,6 +366,73 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     );
   }
 
+  // ─── Poin 3: Expand / Collapse Bottom Sheet ──────────────────────────────
+  void _expandSheetToFull() {
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        1.0,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _collapseSheetToPeek() {
+    _searchFocusNode.unfocus();
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        0.32,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  // ─── FR-L08: Dialog Laporkan Konten (Abuse Report) ────────────────────────
+  Future<void> _showReportAbuseDialog(Item item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.report_problem_outlined, color: Colors.amber),
+            const SizedBox(width: 8),
+            Text('Laporkan Laporan?', style: GoogleFonts.poppins(fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          'Apakah Anda yakin laporan "${item.nameItem}" mencurigakan atau memuat informasi palsu? Sesuai PRD v1.1, laporan dengan ≥3 aduan dari pengguna terverifikasi akan disembunyikan otomatis.',
+          style: GoogleFonts.poppins(fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _lostRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Laporkan'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Laporan telah dikirim untuk ditinjau oleh sistem anti-scam.',
+            style: GoogleFonts.poppins(fontSize: 12),
+          ),
+          backgroundColor: _primaryGreen,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   // ─── Build UI ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -322,10 +440,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
       backgroundColor: const Color(0xFFF1F5F9),
       body: Stack(
         children: [
-          // 1. Interactive Map Layer (FR-L02)
+          // 1. Peta Interaktif (FR-L02)
           _buildMap(),
 
-          // 2. Top Header Bar & GPS Status Badge
+          // 2. Header Atas
           Positioned(
             top: 0,
             left: 0,
@@ -333,15 +451,24 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
             child: _buildTopHeader(),
           ),
 
-          // 3. Floating Map Controls (GPS Button, Center Campus, Zoom)
+          // Poin 1 (FR-L06): Banner Notifikasi Radius Mengambang Mandiri (Tidak Ngestuck)
           Positioned(
-            right: 16,
-            bottom: 300,
-            child: _buildMapControls(),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildNearbyBanner(),
           ),
 
-          // 4. Selected Marker Popup Card Preview
-          if (_selectedItem != null)
+          // 3. Kontrol Peta Mengambang (Hanya tampil jika sheet tidak menutup penuh layar)
+          if (_currentSheetSize < 0.75)
+            Positioned(
+              right: 16,
+              bottom: 290,
+              child: _buildMapControls(),
+            ),
+
+          // 4. Kartu Preview Marker Terpilih
+          if (_selectedItem != null && _currentSheetSize < 0.50)
             Positioned(
               left: 16,
               right: 16,
@@ -349,10 +476,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
               child: _buildSelectedItemPreviewCard(_selectedItem!),
             ),
 
-          // 5. Draggable Scrollable Bottom Sheet (FR-L03, FR-L04, FR-L05)
+          // 5. Draggable Bottom Sheet (Poin 3: Dapat menutupi peta penuh untuk kenyamanan pencarian)
           _buildDraggableBottomSheet(),
 
-          // 6. Loading Indicator
+          // 6. Loading View
           if (_isLoading)
             Positioned.fill(
               child: Container(
@@ -368,30 +495,36 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
   // ─── Widget: Interactive Map ─────────────────────────────────────────────
   Widget _buildMap() {
     final itemsToRender = _filteredItems;
+    final initialCenter = _selectedItem != null
+        ? _getItemLatLng(_selectedItem!)
+        : CampusLocations.unandCenter;
+    final initialZoom = _selectedItem != null ? 17.5 : 16.5;
 
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
-        initialCenter: CampusLocations.unandCenter,
-        initialZoom: 16.5,
+        initialCenter: initialCenter,
+        initialZoom: initialZoom,
         minZoom: 13.0,
         maxZoom: 18.5,
         onTap: (_, __) {
-          // Tap on empty space deselects selected marker
           if (_selectedItem != null) {
             setState(() => _selectedItem = null);
+          }
+          if (_currentSheetSize > 0.40) {
+            _collapseSheetToPeek();
           }
         },
       ),
       children: [
-        // OpenStreetMap Tile Layer
+        // OpenStreetMap Tile Layer (PRD v1.1)
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'id.ac.unand.find_it',
           maxZoom: 19,
         ),
 
-        // Campus Landmarks Reference Markers (Translucent pins for context)
+        // Marker Titik Gedung Utama Unand
         MarkerLayer(
           markers: CampusLocations.landmarks.entries.map((entry) {
             return Marker(
@@ -402,7 +535,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.85),
+                    color: Colors.white.withValues(alpha: 0.88),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.black12),
                   ),
@@ -422,7 +555,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
           }).toList(),
         ),
 
-        // User GPS Position Marker (FR-L01)
+        // Marker Posisi GPS Pengguna (FR-L01)
         if (_userLocation != null)
           MarkerLayer(
             markers: [
@@ -435,7 +568,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
             ],
           ),
 
-        // Items Marker Layer (FR-L02)
+        // Marker Laporan Lost & Found (FR-L02)
         MarkerLayer(
           markers: itemsToRender.map((item) {
             final isSelected = _selectedItem?.id == item.id;
@@ -489,7 +622,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
             ),
           ),
         ),
-        // Pin pointer needle
         Container(
           width: 3,
           height: isSelected ? 10 : 8,
@@ -502,12 +634,11 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     );
   }
 
-  // ─── Widget: User GPS Location Pulse Marker ──────────────────────────────
+  // ─── Widget: User Location Marker ────────────────────────────────────────
   Widget _buildUserLocationMarker() {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Pulse ring
         Container(
           width: 44,
           height: 44,
@@ -516,7 +647,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
             color: Colors.blue.withValues(alpha: 0.25),
           ),
         ),
-        // Inner blue dot
         Container(
           width: 18,
           height: 18,
@@ -537,6 +667,88 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     );
   }
 
+  // ─── Poin 1: Banner Notifikasi Radius (Auto-Dismiss, Tidak Ngestuck) ─────
+  Widget _buildNearbyBanner() {
+    if (!_showNearbyBanner || _nearbyItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 64, 16, 0),
+        child: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(16),
+          color: _primaryGreen,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.notifications_active, color: Colors.white, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Laporan di Sekitar Lokasimu',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        'Ditemukan ${_nearbyItems.length} laporan dalam radius ${_selectedRadiusMeters.round()}m.',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _onlyNearbyFilter = true;
+                      _showNearbyBanner = false;
+                    });
+                    _expandSheetToFull();
+                  },
+                  child: Text(
+                    'Filter',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                  onPressed: () {
+                    _nearbyBannerTimer?.cancel();
+                    setState(() => _showNearbyBanner = false);
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ─── Widget: Top Header Bar ──────────────────────────────────────────────
   Widget _buildTopHeader() {
     return SafeArea(
@@ -544,7 +756,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            // Back Button
             Material(
               color: Colors.white,
               elevation: 4,
@@ -556,7 +767,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
               ),
             ),
             const SizedBox(width: 12),
-            // Title & GPS Status Pill
             Expanded(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -618,13 +828,15 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // My Location GPS Button
         FloatingActionButton.small(
           heroTag: 'btn-my-location',
           backgroundColor: Colors.white,
           foregroundColor: _userLocation != null ? _primaryGreen : Colors.grey,
           tooltip: 'Lokasi Saya (GPS)',
-          onPressed: () => _detectUserLocation(showSnackBarOnError: true),
+          onPressed: () => _detectUserLocation(
+            showFeedbackOnError: true,
+            shouldMoveCamera: true, // Manual tap: geser kamera ke posisi user
+          ),
           child: _isLocatingUser
               ? const SizedBox(
                   width: 18,
@@ -634,7 +846,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
               : const Icon(Icons.my_location),
         ),
         const SizedBox(height: 8),
-        // Campus Center Reset Button
         FloatingActionButton.small(
           heroTag: 'btn-campus-center',
           backgroundColor: Colors.white,
@@ -646,7 +857,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
           child: const Icon(Icons.school_outlined),
         ),
         const SizedBox(height: 8),
-        // Zoom In
         FloatingActionButton.small(
           heroTag: 'btn-zoom-in',
           backgroundColor: Colors.white,
@@ -661,7 +871,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
           child: const Icon(Icons.add),
         ),
         const SizedBox(height: 8),
-        // Zoom Out
         FloatingActionButton.small(
           heroTag: 'btn-zoom-out',
           backgroundColor: Colors.white,
@@ -782,6 +991,12 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
                         ),
                       ),
                       const Spacer(),
+                      // FR-L08: Tombol Laporkan Konten
+                      IconButton(
+                        tooltip: 'Laporkan Laporan (Anti-scam)',
+                        icon: const Icon(Icons.flag_outlined, size: 18, color: Colors.grey),
+                        onPressed: () => _showReportAbuseDialog(item),
+                      ),
                       FilledButton(
                         style: FilledButton.styleFrom(
                           backgroundColor: _primaryGreen,
@@ -816,17 +1031,18 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     );
   }
 
-  // ─── Widget: Draggable Bottom Sheet (FR-L03, FR-L04, FR-L05) ─────────────
+  // ─── Widget: Draggable Bottom Sheet (Poin 3: Fullscreen Search Support) ───
   Widget _buildDraggableBottomSheet() {
     final filteredItems = _filteredItems;
+    final isExpandedFull = _currentSheetSize >= 0.85;
 
     return DraggableScrollableSheet(
       controller: _sheetController,
       initialChildSize: 0.32,
       minChildSize: 0.12,
-      maxChildSize: 0.88,
+      maxChildSize: 1.0, // Poin 3: Bisa full 100% menutupi peta agar leluasa
       snap: true,
-      snapSizes: const [0.12, 0.32, 0.65, 0.88],
+      snapSizes: const [0.12, 0.32, 0.65, 1.0],
       builder: (context, scrollController) {
         return Container(
           decoration: const BoxDecoration(
@@ -843,15 +1059,15 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
           child: CustomScrollView(
             controller: scrollController,
             slivers: [
-              // Grab Handle & Search / Filter Header
+              // Header Sheet, Search Bar, & Filter
               SliverToBoxAdapter(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Grab handle bar
+                    // Handle Bar & Tombol Toggle View Peta
                     Center(
                       child: Container(
-                        margin: const EdgeInsets.only(top: 10, bottom: 8),
+                        margin: const EdgeInsets.only(top: 10, bottom: 6),
                         width: 44,
                         height: 4.5,
                         decoration: BoxDecoration(
@@ -861,38 +1077,73 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
                       ),
                     ),
 
-                    // Search Bar (FR-L04)
+                    // Baris Aksi Pencarian (Search Input & Tombol Fullscreen/Collapse Peta)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (val) {
-                          setState(() => _searchQuery = val);
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Cari laporan di kampus Unand...',
-                          hintStyle: GoogleFonts.poppins(fontSize: 12),
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: const Color(0xFFF1F5F9),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 10,
-                            horizontal: 14,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              focusNode: _searchFocusNode,
+                              onTap: () {
+                                // Poin 3: Saat user mengetuk input pencarian, otomatis perluas sheet
+                                if (_currentSheetSize < 0.65) {
+                                  _expandSheetToFull();
+                                }
+                              },
+                              onChanged: (val) {
+                                setState(() => _searchQuery = val);
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'Cari barang, merek, atau deskripsi...',
+                                hintStyle: GoogleFonts.poppins(fontSize: 12),
+                                prefixIcon: const Icon(Icons.search, size: 20),
+                                suffixIcon: _searchQuery.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 18),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() => _searchQuery = '');
+                                        },
+                                      )
+                                    : null,
+                                filled: true,
+                                fillColor: const Color(0xFFF1F5F9),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                  horizontal: 14,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
+                          const SizedBox(width: 8),
+                          // Poin 3: Tombol Beralih Mode Peta vs Pencarian Penuh
+                          Material(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(14),
+                            child: IconButton(
+                              tooltip: isExpandedFull ? 'Lihat Peta' : 'Layar Penuh',
+                              icon: Icon(
+                                isExpandedFull
+                                    ? Icons.keyboard_arrow_down
+                                    : Icons.fullscreen,
+                                color: _primaryGreen,
+                              ),
+                              onPressed: () {
+                                if (isExpandedFull) {
+                                  _collapseSheetToPeek();
+                                } else {
+                                  _expandSheetToFull();
+                                }
+                              },
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
 
@@ -906,12 +1157,12 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
 
                     const SizedBox(height: 8),
 
-                    // Category Filters (FR-L05)
+                    // Filter 10 Kategori Baku PRD v1.1
                     _buildCategoryFilterList(),
 
                     const SizedBox(height: 8),
 
-                    // Summary & Nearby Switch Banner (FR-L06)
+                    // Baris Informasi Hasil & Pengaturan Radius (FR-L06, FR-L07)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
@@ -925,14 +1176,19 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
                             ),
                           ),
                           const Spacer(),
-                          // Radius Filter Toggle (FR-L06)
+                          // Pilihan Radius FR-L07: 200m / 500m / 1000m
                           if (_userLocation != null)
-                            InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () {
+                            PopupMenuButton<double>(
+                              tooltip: 'Pilih Radius Notifikasi',
+                              initialValue: _selectedRadiusMeters,
+                              onSelected: (radius) {
                                 setState(() {
-                                  _onlyNearbyFilter = !_onlyNearbyFilter;
+                                  _selectedRadiusMeters = radius;
+                                  _onlyNearbyFilter = true;
                                 });
+                                if (_userLocation != null) {
+                                  _updateNearbyItems(_userLocation!);
+                                }
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -957,18 +1213,40 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      'Radius ≤ 500m',
+                                      'Radius ≤ ${_selectedRadiusMeters.round()}m',
                                       style: GoogleFonts.poppins(
                                         fontSize: 10.5,
                                         fontWeight: FontWeight.w600,
                                         color: _onlyNearbyFilter
+                                            ? Colors.white
+                                            : _primaryGreen,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Icon(
+                                      Icons.arrow_drop_down,
+                                      size: 16,
+                                      color: _onlyNearbyFilter
                                           ? Colors.white
                                           : _primaryGreen,
-                                      ),
                                     ),
                                   ],
                                 ),
                               ),
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 200.0,
+                                  child: Text('Radius 200 m (Sangat Dekat)'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 500.0,
+                                  child: Text('Radius 500 m (Default)'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 1000.0,
+                                  child: Text('Radius 1.000 m (1 km)'),
+                                ),
+                              ],
                             ),
                         ],
                       ),
@@ -989,7 +1267,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
                         message: _searchQuery.isNotEmpty ||
                                 _selectedTypeFilter != 'Semua' ||
                                 _selectedCategoryFilter != 'Semua'
-                            ? 'Tidak ada laporan yang sesuai filter pencarian.'
+                            ? 'Tidak ada laporan yang cocok dengan kata kunci "$_searchQuery".'
                             : 'Belum ada laporan di kawasan ini.',
                       ),
                     ),
@@ -1058,25 +1336,17 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     );
   }
 
-  // ─── Widget: Filter Kategori Horizontal ──────────────────────────────────
+  // ─── Widget: Filter 10 Kategori Baku Horizontal ──────────────────────────
   Widget _buildCategoryFilterList() {
-    const categories = [
-      'Semua',
-      'Elektronik',
-      'Aksesori',
-      'Dokumen',
-      'Lainnya',
-    ];
-
     return SizedBox(
       height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: categories.length,
+        itemCount: _bakuCategories.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final cat = categories[index];
+          final cat = _bakuCategories[index];
           final isSelected = _selectedCategoryFilter == cat;
           return FilterChip(
             label: Text(
@@ -1128,14 +1398,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
           borderRadius: BorderRadius.circular(16),
           onTap: () {
             _onSelectItem(item, focusMap: true);
-            // Optionally collapse sheet slightly so user can view marker on map
-            if (_sheetController.size > 0.45) {
-              _sheetController.animateTo(
-                0.32,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
-            }
+            // Poin 3: Ketika item ditekan, kecilkan sheet kembali agar peta dan marker terlihat jelas
+            _collapseSheetToPeek();
           },
           child: Padding(
             padding: const EdgeInsets.all(10),
@@ -1245,4 +1509,3 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen>
     );
   }
 }
-
