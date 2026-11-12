@@ -142,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted || item == null) return;
     _matchingService.addReport(item);
     setState(() {
-      _items = [..._repository.items];
+      _items = [item, ..._repository.items];
       _selectedFilter = 'Semua';
       _searchController.clear();
     });
@@ -194,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
       decoration: BoxDecoration(
         color: scheme.primary,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
       child: Column(
         children: [
@@ -214,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       'Selamat Datang',
                       style: TextStyle(color: scheme.secondary, fontSize: 12),
                     ),
-                    Text(
+                    const Text(
                       'Mari Temukan Barangmu!',
                       style: TextStyle(
                         color: Colors.white,
@@ -233,6 +233,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 color: Colors.white,
                 icon: const Icon(Icons.manage_search),
+              ),
+              IconButton(
+                tooltip: 'Matching, klaim & notifikasi',
+                onPressed: () => Navigator.pushNamed<void>(
+                  context,
+                  AppRoutes.matches,
+                  arguments: _matchingService,
+                ),
+                color: Colors.white,
+                icon: const Icon(Icons.notifications_none),
               ),
             ],
           ),
@@ -291,7 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- Kartu laporan barang ---
+  // --- Kartu CTA laporan barang ---
   Widget _buildReportCallout() {
     return Material(
       color: const Color(0xFFFEDADA),
@@ -300,15 +310,15 @@ class _HomeScreenState extends State<HomeScreen> {
         key: const Key('home-create-report'),
         onTap: () => _createReport(false),
         borderRadius: BorderRadius.circular(20),
-        child: SizedBox(
+        child: const SizedBox(
           width: 165,
           height: 132,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.search, color: Color(0xFFC20E18), size: 56),
-              const SizedBox(height: 2),
-              const Text(
+              Icon(Icons.search, color: Color(0xFFC20E18), size: 56),
+              SizedBox(height: 2),
+              Text(
                 'Laporkan',
                 style: TextStyle(
                   color: Color(0xFFC20E18),
@@ -316,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontSize: 14,
                 ),
               ),
-              const Text(
+              Text(
                 'Barang Hilang',
                 style: TextStyle(
                   color: Color(0xFFC20E18),
@@ -496,8 +506,19 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Icon(Icons.home, color: scheme.primary, size: 29),
-            Icon(Icons.map_outlined, color: scheme.primary, size: 27),
+            IconButton(
+              tooltip: 'Beranda',
+              onPressed: () {},
+              icon: Icon(Icons.home, color: scheme.primary, size: 29),
+            ),
+            IconButton(
+              tooltip: 'Peta Kampus',
+              onPressed: () => Navigator.pushNamed<void>(
+                context,
+                AppRoutes.mapDiscovery,
+              ),
+              icon: Icon(Icons.map_outlined, color: scheme.primary, size: 27),
+            ),
             const SizedBox(width: 42),
             IconButton(
               tooltip: 'Matching, klaim & notifikasi',

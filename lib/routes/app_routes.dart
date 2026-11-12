@@ -1,43 +1,48 @@
 import 'package:flutter/material.dart';
 
 import '../models/item.dart';
-// import '../screens/catatan_form_screen.dart';
+import '../screens/add_report_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/detail_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
-import '../screens/not_found_screen.dart';
-import '../screens/add_report_screen.dart';
 import '../screens/lost_item_list_screen.dart';
+import '../screens/map_discovery_screen.dart';
+import '../screens/campus_location_picker_screen.dart';
 import '../screens/matching_screen.dart';
+import '../screens/not_found_screen.dart';
+import '../screens/register_screen.dart';
 import '../services/matching_service.dart';
 
 class AppRoutes {
   AppRoutes._();
 
-  // Kata kunci static digunakan pada variabel atau method agar milik kelas secara langsung, bukan milik objek
   static const String login = '/login';
   static const String home = '/home';
   static const String detail = '/detail';
-  //static const String noteForm = '/catatan-form';
   static const String addReport = '/laporan/tambah';
   static const String chat = '/chat';
   static const String advancedSearch = '/pencarian-lanjutan';
   static const String matches = '/matching';
+  static const String register = '/register';
+  static const String mapDiscovery = '/peta-discovery';
+  static const String locationPicker = '/lokasi/pilih';
 
-  // Fungsi yang dipanggil MaterialApp untuk membuat rute berdasarkan settings
-  // Route<dynamic>? berarti fungsi dapat mengembalikan rute dengan hasil berbagai tipe atau null jika nama rutenya tidak cocok.
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case login:
         return MaterialPageRoute<void>(
-          // Tipe void berarti rute ini tidak mengembalikan data melalui Navigator.pop
           builder: (_) => const LoginScreen(),
-          settings: settings, // Meneruskan informasi rute, termasuk nama dan argumen, ke objek rute
+          settings: settings,
         );
       case home:
         return MaterialPageRoute<void>(
           builder: (_) => const HomeScreen(),
+          settings: settings,
+        );
+      case register:
+        return MaterialPageRoute<String>(
+          builder: (_) => const RegisterScreen(),
           settings: settings,
         );
       case advancedSearch:
@@ -58,8 +63,7 @@ class AppRoutes {
           settings: settings,
         );
       case detail:
-        final arguments =
-            settings.arguments; // Mengambil argumen yang diteruskan ke rute ini
+        final arguments = settings.arguments;
         if (arguments is Item) {
           return MaterialPageRoute<String>(
             builder: (_) => DetailScreen(item: arguments),
@@ -70,16 +74,9 @@ class AppRoutes {
           builder: (_) => NotFoundScreen(routeName: settings.name),
           settings: settings,
         );
-      /*case noteForm:
-        return MaterialPageRoute<String>(
-          builder: (_) => const CatatanFormScreen(),
-          settings: settings,
-        );*/
       case addReport:
-        final arguments =
-            settings.arguments; // Mengambil argumen yang diteruskan ke rute ini
+        final arguments = settings.arguments;
         if (arguments is bool) {
-          // Memeriksa apakah argumen yang diteruskan adalah boolean
           return MaterialPageRoute<Item>(
             builder: (_) => AddReportScreen(isFound: arguments),
             settings: settings,
@@ -99,6 +96,19 @@ class AppRoutes {
         }
         return MaterialPageRoute<void>(
           builder: (_) => NotFoundScreen(routeName: settings.name),
+          settings: settings,
+        );
+      case mapDiscovery:
+        final arguments = settings.arguments;
+        return MaterialPageRoute<void>(
+          builder: (_) => arguments is Item
+              ? MapDiscoveryScreen(initialSelectedItem: arguments)
+              : const MapDiscoveryScreen(),
+          settings: settings,
+        );
+      case locationPicker:
+        return MaterialPageRoute<CampusLocationResult>(
+          builder: (_) => const CampusLocationPickerScreen(),
           settings: settings,
         );
       default:

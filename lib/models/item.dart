@@ -51,6 +51,8 @@ class Item {
     this.isOwner = false,
   });
 
+  bool get hasCoordinates => latitude != null && longitude != null;
+
   String get eventDateLabel {
     final date = eventDate;
     if (date == null) return 'Belum dicantumkan';

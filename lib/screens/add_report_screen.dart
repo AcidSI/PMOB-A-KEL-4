@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../models/item.dart';
-import '../services/device_image_picker.dart';
+import '../routes/app_routes.dart';
 import '../services/app_session.dart';
+import '../services/device_image_picker.dart';
+import '../services/location_service.dart';
+import '../utils/campus_locations.dart';
 import '../utils/validators.dart';
+import 'campus_location_picker_screen.dart';
 
 class AddReportScreen extends StatefulWidget {
   final bool isFound; // parameter untuk menentukan apakah laporan ini untuk barang yang ditemukan atau hilang
@@ -18,15 +23,17 @@ class AddReportScreen extends StatefulWidget {
 class _AddReportScreenState extends State<AddReportScreen> {
   static const _green = Color(0xFF045436);
   static const _categories = [
+    'Elektronik',
     'Dompet & Kartu',
     'Tas & Ransel',
-    'Elektronik',
     'Kunci & Kendaraan',
     'Dokumen & Perlengkapan Kuliah',
     'Pakaian & Aksesori',
     'Botol & Perlengkapan Makan',
     'Perlengkapan Ibadah',
     'Perlengkapan Olahraga',
+    'Dokumen',
+    'Aksesori',
     'Lainnya',
   ];
 
@@ -41,10 +48,12 @@ class _AddReportScreenState extends State<AddReportScreen> {
   final _imagePicker = const DeviceImagePicker();
 
   String? _category;
-  String? _category2;
   bool _hasAttemptedSubmit = false;
   bool _isSubmitting = false;
   bool _isPickingPhoto = false;
+  bool _isDetectingLocation = false;
+  double? _selectedLatitude;
+  double? _selectedLongitude;
   String? _errorMessage;
   Uint8List? _imageData;
   DateTime _eventDate = DateTime.now();
@@ -97,7 +106,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
   }
 
   Future<void> _selectPhoto() async {
-    if (_isPickingPhoto || _isSubmitting) return; // Mencegah pemilihan foto berulang atau saat laporan sedang dikirim
+    if (_isPickingPhoto || _isSubmitting) return;
     setState(() {
       _isPickingPhoto = true;
       _errorMessage = null;
@@ -115,6 +124,76 @@ class _AddReportScreenState extends State<AddReportScreen> {
     } finally {
       if (mounted) setState(() => _isPickingPhoto = false);
     }
+  }
+
+  Future<void> _detectGpsLocation() async {
+    if (_isDetectingLocation || _isSubmitting) return;
+    setState(() => _isDetectingLocation = true);
+    try {
+      const locationService = LocationService();
+      final res = await locationService.determinePosition();
+      if (!mounted) return;
+      if (res.isSuccess && res.position != null) {
+        final landmark = CampusLocations.getNearestLandmark(res.position!);
+        setState(() {
+          _locationController.text = landmark;
+          _selectedLatitude = res.position!.latitude;
+          _selectedLongitude = res.position!.longitude;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lokasi terdeteksi: $landmark'),
+            backgroundColor: _green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message),
+            backgroundColor: Colors.grey.shade800,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDetectingLocation = false);
+    }
+  }
+
+  Future<void> _openCampusLocationPicker() async {
+    if (_isSubmitting) return;
+    FocusScope.of(context).unfocus();
+
+    final result = await Navigator.pushNamed<CampusLocationResult>(
+      context,
+      AppRoutes.locationPicker,
+      arguments: {
+        'initialLocationName': _locationController.text.trim(),
+        'initialCenter': _selectedLatitude != null && _selectedLongitude != null
+            ? LatLng(_selectedLatitude!, _selectedLongitude!)
+            : null,
+      },
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _locationController.text = result.locationName;
+      _selectedLatitude = result.latitude;
+      _selectedLongitude = result.longitude;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Lokasi terpilih: ${result.locationName}'),
+        backgroundColor: _green,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _submitReport() async {
@@ -142,6 +221,12 @@ class _AddReportScreenState extends State<AddReportScreen> {
         _eventTime.hour,
         _eventTime.minute,
       );
+
+      final verificationText = _verificationController.text.trim();
+      final verificationDetails = verificationText.isEmpty
+          ? const <String>[]
+          : [verificationText];
+
       item = Item(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         nameItem:
@@ -158,17 +243,25 @@ class _AddReportScreenState extends State<AddReportScreen> {
             _locationController.text.trim().substring(1),
         isFound: widget.isFound,
         category: _category!,
-        category2: _category2,
-        color: _optionalValue(_colorController.text),
-        brand: _optionalValue(_brandController.text),
-        verificationDetails: _verificationController.text.trim().isEmpty
-            ? const []
-            : [_verificationController.text.trim()],
-        whatsapp: _optionalValue(_whatsappController.text),
-        ownerId: AppSession.userId,
         eventDate: eventDateTime,
         imageData: _imageData,
         isOwner: true,
+        color: _colorController.text.trim().isEmpty
+            ? null
+            : _colorController.text.trim(),
+        brand: _brandController.text.trim().isEmpty
+            ? null
+            : _brandController.text.trim(),
+        reporter: AppSession.userId != null ? 'Saya' : 'Pelapor',
+        ownerId: AppSession.userId ?? 'user:local',
+        verificationDetails: verificationDetails,
+        whatsapp: _whatsappController.text.trim().isEmpty
+            ? null
+            : _whatsappController.text.trim(),
+        latitude: _selectedLatitude ??
+            CampusLocations.getCoordinates(_locationController.text.trim()).latitude,
+        longitude: _selectedLongitude ??
+            CampusLocations.getCoordinates(_locationController.text.trim()).longitude,
       );
     } catch (error) {
       if (!mounted) return;
@@ -197,7 +290,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
         ),
       );
       if (!mounted) return;
-      Navigator.pop<Item>(context, item); //
+      Navigator.pop<Item>(context, item);
     } catch (error) {
       if (!mounted) return;
       setState(() => _errorMessage = 'Laporan gagal dikirim: $error');
@@ -215,13 +308,9 @@ class _AddReportScreenState extends State<AddReportScreen> {
         '${_eventTime.minute.toString().padLeft(2, '0')}';
   }
 
-  String? _optionalValue(String value) =>
-      value.trim().isEmpty ? null : value.trim();
-
   @override
   Widget build(BuildContext context) {
     return PopScope<Item>(
-      //widget PopScope digunakan untuk menangani navigasi kembali dengan hasil tertentu
       canPop: !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) {},
       child: Scaffold(
@@ -230,298 +319,414 @@ class _AddReportScreenState extends State<AddReportScreen> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
           leading: IconButton(
-            // lea
             tooltip: 'Kembali',
             onPressed: _isSubmitting ? null : () => Navigator.pop(context),
             icon: const Icon(Icons.arrow_back, color: Colors.black),
           ),
-
           title: Text(
-            'Buat Laporan Barang ${widget.isFound ? 'Ditemukan' : 'Hilang'}',
+            widget.isFound
+                ? 'Buat Laporan Barang Ditemukan'
+                : 'Buat Laporan Barang Hilang',
             style: const TextStyle(
               color: Colors.black,
-              fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
           ),
-          titleSpacing: 0,
+          centerTitle: true,
         ),
-
         body: SafeArea(
-          //widget SafeArea digunakan untuk memastikan konten tidak tertutup oleh elemen sistem seperti notch atau status bar
-          top: false,
-          child: Form(
-            key: _formKey,
-            autovalidateMode: _hasAttemptedSubmit
-                ? AutovalidateMode.onUserInteraction
-                : AutovalidateMode.disabled,
-            child: ListView(
-              //widget ListView digunakan untuk membuat daftar yang dapat digulir
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
-              children: [
-                const Text(
-                  'Informasi Barang',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: _green,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  widget.isFound
-                      ? 'Catat barang yang Anda temukan agar pemiliknya dapat mengambil kembali.'
-                      : 'Laporkan barang yang hilang agar orang lain dapat membantu menemukannya.',
-                  style: const TextStyle(
-                    color: Color(0xFF666666),
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _fieldLabel('Nama Barang', required: true),
-                const SizedBox(height: 7),
-                TextFormField(
-                  key: const Key('report-name'),
-                  controller: _nameController,
-                  enabled: !_isSubmitting,
-                  textCapitalization: TextCapitalization.sentences, // t
-                  textInputAction: TextInputAction.next,
-                  validator: Validators.reportName,
-                  decoration: _inputDecoration('Contoh: Dompet Kulit'),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Kategori', required: true),
-                const SizedBox(height: 7),
-                DropdownButtonFormField<String>(
-                  key: const Key('report-category'),
-                  initialValue: _category,
-                  hint: const Text('Pilih Kategori'),
-                  decoration: _inputDecoration(null),
-                  validator: Validators.reportCategory,
-                  items: _categories
-                      .map(
-                        (category) => DropdownMenuItem(
-                          value: category,
-                          child: Text(category),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            children: [
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: MaterialBanner(
+                    content: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    backgroundColor: Colors.red.shade700,
+                    actions: [
+                      TextButton(
+                        onPressed: () => setState(() => _errorMessage = null),
+                        child: const Text(
+                          'Tutup',
+                          style: TextStyle(color: Colors.white),
                         ),
-                      )
-                      .toList(),
-                  onChanged:
-                      _isSubmitting // m
-                      ? null
-                      : (value) => setState(() {
-                          _category = value;
-                          if (_category2 == value) _category2 = null;
-                        }),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Kategori kedua (opsional)'),
-                const SizedBox(height: 7),
-                DropdownButtonFormField<String>(
-                  key: const Key('report-category-secondary'),
-                  initialValue: _category2,
-                  hint: const Text('Pilih jika barang gabungan'),
-                  decoration: _inputDecoration(null),
-                  items: _categories
-                      .where((category) => category != _category)
-                      .map(
-                        (category) => DropdownMenuItem(
-                          value: category,
-                          child: Text(category),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _isSubmitting
-                      ? null
-                      : (value) => setState(() => _category2 = value),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Deskripsi', required: true),
-                const SizedBox(height: 7),
-                TextFormField(
-                  key: const Key('report-description'),
-                  controller: _descriptionController,
-                  enabled: !_isSubmitting,
-                  minLines: 3,
-                  maxLines: 4,
-                  //maxLength: 50,
-                  textCapitalization: TextCapitalization.sentences,
-                  validator: Validators.reportDescription,
-                  decoration: _inputDecoration(
-                    'Jelaskan ciri-ciri barang secara detail',
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                _fieldLabel('Detail pembeda rahasia'),
-                const SizedBox(height: 7),
-                TextFormField(
-                  key: const Key('report-verification-detail'),
-                  controller: _verificationController,
-                  enabled: !_isSubmitting,
-                  minLines: 2,
-                  maxLines: 3,
-                  validator: widget.isFound
-                      ? (value) => Validators.requiredField(
-                          value,
-                          fieldName: 'Detail pembeda rahasia',
-                        )
-                      : null,
-                  decoration: _inputDecoration(
-                    widget.isFound
-                        ? 'Wajib diisi; hanya terlihat saat meninjau klaim'
-                        : 'Ciri yang hanya diketahui pemilik (opsional)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Warna (opsional)'),
-                const SizedBox(height: 7),
-                TextFormField(
-                  controller: _colorController,
-                  enabled: !_isSubmitting,
-                  decoration: _inputDecoration('Contoh: Hitam'),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Merek (opsional)'),
-                const SizedBox(height: 7),
-                TextFormField(
-                  controller: _brandController,
-                  enabled: !_isSubmitting,
-                  decoration: _inputDecoration('Contoh: ASUS'),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Waktu Kejadian'),
-                const SizedBox(height: 7),
-                Row(
+              Form(
+                key: _formKey,
+                autovalidateMode: _hasAttemptedSubmit
+                    ? AutovalidateMode.onUserInteraction
+                    : AutovalidateMode.disabled,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: OutlinedButton.icon(
-                        key: const Key('report-date'),
-                        onPressed: _isSubmitting ? null : _selectDate,
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        label: Text(_formattedDate),
-                        style: _pickerButtonStyle(),
+                    _fieldLabel('Nama Barang', required: true),
+                    const SizedBox(height: 7),
+                    TextFormField(
+                      key: const Key('report-name'),
+                      controller: _nameController,
+                      enabled: !_isSubmitting,
+                      textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.next,
+                      validator: Validators.reportName,
+                      decoration: _inputDecoration(
+                        widget.isFound
+                            ? 'Contoh: Dompet Kulit Coklat'
+                            : 'Contoh: Tumbler Corkcicle',
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: OutlinedButton.icon(
-                        key: const Key('report-time'),
-                        onPressed: _isSubmitting ? null : _selectTime,
-                        icon: const Icon(Icons.access_time),
-                        label: Text(_formattedTime),
-                        style: _pickerButtonStyle(),
+                    const SizedBox(height: 12),
+                    _fieldLabel('Kategori', required: true),
+                    const SizedBox(height: 7),
+                    DropdownButtonFormField<String>(
+                      key: const Key('report-category'),
+                      initialValue: _category,
+                      decoration: _inputDecoration('Pilih kategori'),
+                      items: _categories
+                          .map(
+                            (cat) => DropdownMenuItem(
+                              value: cat,
+                              child: Text(cat),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _isSubmitting
+                          ? null
+                          : (value) => setState(() => _category = value),
+                      validator: Validators.reportCategory,
+                    ),
+                    const SizedBox(height: 12),
+                    _fieldLabel(
+                      widget.isFound ? 'Lokasi Ditemukan' : 'Lokasi Terakhir Dilihat',
+                      required: true,
+                    ),
+                    const SizedBox(height: 7),
+                    TextFormField(
+                      key: const Key('report-location'),
+                      controller: _locationController,
+                      enabled: !_isSubmitting,
+                      textInputAction: TextInputAction.next,
+                      validator: Validators.reportLocation,
+                      decoration: _inputDecoration(
+                        'Contoh: Gedung Kuliah Bersama, Gedung B, Library...',
+                      ).copyWith(
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Deteksi GPS',
+                              icon: _isDetectingLocation
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: _green,
+                                      ),
+                                    )
+                                  : const Icon(Icons.my_location, color: _green),
+                              onPressed: _isDetectingLocation || _isSubmitting
+                                  ? null
+                                  : _detectGpsLocation,
+                            ),
+                            IconButton(
+                              tooltip: 'Pilih di Peta Kampus',
+                              icon: const Icon(Icons.map_outlined, color: _green),
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : _openCampusLocationPicker,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel(
-                  widget.isFound ? 'Lokasi Ditemukan' : 'Lokasi Terakhir',
-                  required: true,
-                ),
-                const SizedBox(height: 7),
-                TextFormField(
-                  key: const Key('report-location'),
-                  controller: _locationController,
-                  enabled: !_isSubmitting,
-                  textCapitalization: TextCapitalization.sentences,
-                  textInputAction: TextInputAction.done,
-                  validator: Validators.reportLocation,
-                  decoration: _inputDecoration(
-                    widget.isFound
-                        ? 'Contoh: Kantin Unand'
-                        : 'Contoh: Perpustakaan Unand',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('WhatsApp (opsional, tidak dipublikasikan)'),
-                const SizedBox(height: 7),
-                TextFormField(
-                  controller: _whatsappController,
-                  enabled: !_isSubmitting,
-                  keyboardType: TextInputType.phone,
-                  decoration: _inputDecoration('Contoh: 08xxxxxxxxxx'),
-                ),
-                const SizedBox(height: 12),
-                _fieldLabel('Foto Barang'),
-                const SizedBox(height: 7),
-                OutlinedButton.icon(
-                  key: const Key('report-photo'),
-                  onPressed: _isSubmitting || _isPickingPhoto
-                      ? null
-                      : _selectPhoto,
-                  icon: _isPickingPhoto
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add_a_photo_outlined),
-                  label: Text(
-                    _isPickingPhoto
-                        ? 'Memilih foto...'
-                        : _imageData == null
-                        ? 'Foto Barang'
-                        : 'Ganti Foto Barang',
-                  ),
-                  style: _pickerButtonStyle(),
-                ),
-                if (_imageData != null) ...[
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.memory(
-                      _imageData!,
-                      height: 180,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ],
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    _errorMessage!,
-                    key: const Key('report-error'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-                const SizedBox(height: 28),
-                Center(
-                  child: FilledButton(
-                    key: const Key('submit-report'),
-                    onPressed: _isSubmitting ? null : _submitReport,
-                    child: _isSubmitting
-                        ? const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
+                    if (_selectedLatitude != null && _selectedLongitude != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFECFDF5),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0x33045436)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, size: 14, color: _green),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Titik terhubung di peta: ${_selectedLatitude!.toStringAsFixed(4)}, ${_selectedLongitude!.toStringAsFixed(4)}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: _green,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              SizedBox(width: 10),
-                              Text('Mengirim laporan...'),
-                            ],
-                          )
-                        : const Text(
-                            'Kirim Laporan',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
+                            ),
+                            InkWell(
+                              onTap: _openCampusLocationPicker,
+                              child: const Text(
+                                'Ubah',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _green,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ActionChip(
+                              avatar: const Icon(Icons.map, size: 14, color: _green),
+                              label: const Text(
+                                'Pilih di Peta',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onPressed: _isSubmitting ? null : _openCampusLocationPicker,
                             ),
                           ),
-                  ),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ActionChip(
+                              avatar: const Icon(Icons.my_location, size: 14, color: _green),
+                              label: const Text('GPS Terdekat', style: TextStyle(fontSize: 11)),
+                              onPressed: _isDetectingLocation || _isSubmitting
+                                  ? null
+                                  : _detectGpsLocation,
+                            ),
+                          ),
+                          ...CampusLocations.landmarkNames.take(8).map((landmark) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: ActionChip(
+                                label: Text(landmark, style: const TextStyle(fontSize: 11)),
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _locationController.text = landmark;
+                                          final coords = CampusLocations.landmarks[landmark];
+                                          if (coords != null) {
+                                            _selectedLatitude = coords.latitude;
+                                            _selectedLongitude = coords.longitude;
+                                          }
+                                        });
+                                      },
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _fieldLabel('Deskripsi', required: true),
+                    const SizedBox(height: 7),
+                    TextFormField(
+                      key: const Key('report-description'),
+                      controller: _descriptionController,
+                      enabled: !_isSubmitting,
+                      maxLines: 3,
+                      maxLength: 150,
+                      validator: Validators.reportDescription,
+                      decoration: _inputDecoration(
+                        'Ciri khusus, kondisi barang, dll.',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _fieldLabel('Warna'),
+                              const SizedBox(height: 7),
+                              TextFormField(
+                                controller: _colorController,
+                                enabled: !_isSubmitting,
+                                decoration: _inputDecoration('Contoh: Hitam'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _fieldLabel('Merek / Brand'),
+                              const SizedBox(height: 7),
+                              TextFormField(
+                                controller: _brandController,
+                                enabled: !_isSubmitting,
+                                decoration: _inputDecoration('Contoh: Samsung'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _fieldLabel('Detail Pembeda Rahasia (Opsional)'),
+                    const SizedBox(height: 7),
+                    TextFormField(
+                      controller: _verificationController,
+                      enabled: !_isSubmitting,
+                      decoration: _inputDecoration(
+                        'Hanya digunakan untuk verifikasi klaim kepemilikan',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _fieldLabel('Waktu Kejadian'),
+                    const SizedBox(height: 7),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _isSubmitting ? null : _selectDate,
+                            icon: const Icon(Icons.calendar_today, size: 16),
+                            label: Text(_formattedDate),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _isSubmitting ? null : _selectTime,
+                            icon: const Icon(Icons.access_time, size: 16),
+                            label: Text(_formattedTime),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _fieldLabel('WhatsApp (Opsional)'),
+                    const SizedBox(height: 7),
+                    TextFormField(
+                      controller: _whatsappController,
+                      enabled: !_isSubmitting,
+                      keyboardType: TextInputType.phone,
+                      decoration: _inputDecoration('Contoh: 08123456789'),
+                    ),
+                    const SizedBox(height: 12),
+                    _fieldLabel('Foto Barang'),
+                    const SizedBox(height: 7),
+                    InkWell(
+                      onTap: _isSubmitting ? null : _selectPhoto,
+                      child: Container(
+                        height: 140,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.black12),
+                        ),
+                        child: _imageData != null
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.memory(
+                                      _imageData!,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: Colors.black54,
+                                      child: IconButton(
+                                        padding: EdgeInsets.zero,
+                                        icon: const Icon(
+                                          Icons.close,
+                                          size: 16,
+                                          color: Colors.white,
+                                        ),
+                                        onPressed: _isSubmitting
+                                            ? null
+                                            : () => setState(
+                                                () => _imageData = null,
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_a_photo_outlined,
+                                    size: 38,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Unggah Foto Barang',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 48,
+                      child: FilledButton(
+                        key: const Key('submit-report'),
+                        onPressed: _isSubmitting ? null : _submitReport,
+                        child: _isSubmitting
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Text('Mengirim laporan...'),
+                                ],
+                              )
+                            : const Text(
+                                'Kirim Laporan',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -531,43 +736,41 @@ class _AddReportScreenState extends State<AddReportScreen> {
   Widget _fieldLabel(String label, {bool required = false}) {
     return RichText(
       text: TextSpan(
-        style: const TextStyle(color: Colors.black, fontSize: 12),
-        children: [
-          TextSpan(text: label),
-          if (required)
-            const TextSpan(
-              text: ' *',
-              style: TextStyle(color: Colors.red),
-            ),
-        ],
+        text: label,
+        style: const TextStyle(
+          color: _green,
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
+        children: required
+            ? const [
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ]
+            : null,
       ),
     );
   }
 
-  InputDecoration _inputDecoration(String? hint) {
+  InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF777777)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF999999)),
+        borderSide: const BorderSide(color: Colors.black26),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFF999999)),
+        borderSide: const BorderSide(color: Colors.black26),
       ),
-    );
-  }
-
-  ButtonStyle _pickerButtonStyle() {
-    // Mengatur gaya tombol untuk pemilihan tanggal, waktu, dan foto
-    return OutlinedButton.styleFrom(
-      foregroundColor: Colors.black,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 12),
-      side: const BorderSide(color: Color(0xFF999999)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: _green, width: 1.5),
+      ),
     );
   }
 }

@@ -36,9 +36,9 @@ class _DetailScreenState extends State<DetailScreen> {
       Navigator.pop<String>(context, widget.item.id);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Laporan gagal dihapus: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Laporan gagal dihapus: $error')),
+      );
     }
   }
 
@@ -158,6 +158,18 @@ class _DetailScreenState extends State<DetailScreen> {
             Text(
               'Pelapor: $reporter',
               style: const TextStyle(fontSize: 12, color: Color(0xFF595858)),
+            ),
+          ],
+          if (item.hasCoordinates) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pushNamed<void>(
+                context,
+                AppRoutes.mapDiscovery,
+                arguments: item,
+              ),
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('Lihat Lokasi di Peta Kampus'),
             ),
           ],
           const Divider(height: 32),

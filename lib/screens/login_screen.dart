@@ -12,7 +12,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Controller dan key menjaga validasi form tanpa mengubah alur tampilannya.
   final _formKey = GlobalKey<FormState>();
   final _identityController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -184,7 +183,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                                 TextButton(
-                                  onPressed: () {},
+                                  onPressed: () {
+                                    Navigator.pushNamed(
+                                      context,
+                                      AppRoutes.register,
+                                    );
+                                  },
                                   style: TextButton.styleFrom(
                                     padding: EdgeInsets.zero,
                                     minimumSize: Size.zero,
@@ -193,7 +197,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   child: const Text(
                                     'Registrasi Akun',
-                                    style: TextStyle(fontSize: 12),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -224,7 +231,17 @@ class _FindItLogo extends StatelessWidget {
       child: Image.asset(
         'assets/images/logo.png',
         fit: BoxFit.contain,
-        semanticLabel: "Logo Find!t",
+        semanticLabel: 'Logo Find!t',
+        errorBuilder: (context, error, stackTrace) => Image.asset(
+          'assets/logo.png',
+          fit: BoxFit.contain,
+          semanticLabel: 'Logo Find!t',
+          errorBuilder: (context, error, stackTrace) => const Icon(
+            Icons.find_in_page,
+            size: 120,
+            color: Color(0xFF045436),
+          ),
+        ),
       ),
     );
   }

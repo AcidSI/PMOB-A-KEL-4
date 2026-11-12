@@ -27,6 +27,23 @@ class ItemRepository {
             ? 'assets/images/dompet.jpg'
             : null,
       ),
+    // Sample Found items
+    Item(
+      id: 'found-earphone-demo',
+      nameItem: 'Earphone Bluetooth',
+      subtitle: 'Ditemukan di dekat Masjid Unand',
+      description:
+          'Earphone Bluetooth dalam casing biru muda ditemukan di area '
+          'Masjid Ilmi Universitas Andalas.',
+      location: 'Masjid Ilmi Unand',
+      isFound: true,
+      category: 'Elektronik',
+      eventDate: DateTime(2026, 10, 9, 10),
+      reporter: 'Pemilik laporan',
+      ownerId: 'user:founder@student.unand.ac.id',
+      latitude: -0.9142,
+      longitude: 100.4598,
+    ),
     Item(
       id: 'sample-tumbler',
       nameItem: 'Tumbler Hijau',
@@ -36,12 +53,14 @@ class ItemRepository {
           'Universitas Andalas.',
       location: 'Perpustakaan',
       isFound: false,
-      category: 'Lainnya',
+      category: 'Botol & Perlengkapan Makan',
       color: 'Hijau',
       brand: 'smätt',
       reporter: 'Pelapor',
       ownerId: 'reporter:sample-tumbler',
       assetPath: 'assets/images/tumbler.jpg',
+      latitude: -0.9148,
+      longitude: 100.4596,
     ),
     Item(
       id: 'found-laptop-demo',
@@ -57,6 +76,8 @@ class ItemRepository {
       reporter: 'Pemilik laporan',
       ownerId: 'user:founder@student.unand.ac.id',
       verificationDetails: const ['Ada stiker kecil di dekat engsel kiri.'],
+      latitude: -0.9148,
+      longitude: 100.4596,
     ),
     Item(
       id: 'found-wallet-demo',
@@ -74,6 +95,9 @@ class ItemRepository {
       verificationDetails: const [
         'Di dalamnya ada gantungan kunci berbentuk daun.',
       ],
+      assetPath: 'assets/images/dompet.jpg',
+      latitude: -0.9165,
+      longitude: 100.4575,
     ),
   ];
 
