@@ -306,33 +306,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
   }
 
   Future<void> _showCreateSheet() async {
-    final isFound = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: ReportColors.surface,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          child: Row(
-            children: [
-              Expanded(
-                child: _CreateOption(
-                  isFound: false,
-                  onTap: () => Navigator.pop(sheetContext, false),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _CreateOption(
-                  isFound: true,
-                  onTap: () => Navigator.pop(sheetContext, true),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final isFound = await showReportTypePicker(context);
     if (!mounted || isFound == null) return;
     await _create(isFound);
   }
@@ -576,64 +550,6 @@ class _DraftCard extends StatelessWidget {
             child: const Text('Lanjutkan'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CreateOption extends StatelessWidget {
-  const _CreateOption({required this.isFound, required this.onTap});
-
-  final bool isFound;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: ReportColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ReportRadius.card),
-        side: const BorderSide(color: ReportColors.line),
-      ),
-      child: InkWell(
-        customBorder: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(ReportRadius.card),
-        ),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: ReportColors.typeTint(isFound),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  isFound ? Icons.photo_camera_outlined : Icons.search,
-                  color: ReportColors.typeColor(isFound),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                isFound ? 'Saya menemukan' : 'Saya kehilangan',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: ReportColors.ink,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                isFound ? 'Foto & laporkan temuan' : 'Laporkan barang hilang',
-                style: const TextStyle(fontSize: 12, color: ReportColors.muted),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

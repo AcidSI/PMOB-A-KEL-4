@@ -58,6 +58,9 @@ class _AddReportScreenState extends State<AddReportScreen> {
   late final ItemRepository _repository;
   final List<ReportPhotoEntry> _photos = [];
 
+  /// Untuk menggulir otomatis ke kotak error saat validasi gagal.
+  final _errorBoxKey = GlobalKey();
+
   String? _category;
   String? _category2;
   ItemKeeping? _keeping;
@@ -554,6 +557,43 @@ class _AddReportScreenState extends State<AddReportScreen> {
 
   // ------------------------------------------------------------ Submit
 
+  /// Pesan yang menyebut field mana saja yang belum benar.
+  String _invalidFieldsMessage() {
+    final invalid = <String>[
+      if (Validators.reportName(_nameController.text) != null ||
+          ReportRules.validateSensitiveTitle(_category, _nameController.text) !=
+              null)
+        'nama barang',
+      if (_category == null) 'kategori',
+      if (Validators.reportDescription(_descriptionController.text) != null)
+        'deskripsi',
+      if (Validators.reportLocation(_locationController.text) != null) 'lokasi',
+      if (Validators.reportSecretDetail(_secretDetailController.text) != null)
+        'detail pembeda',
+      if (Validators.reportWhatsapp(_whatsappController.text) != null)
+        'nomor WhatsApp',
+    ];
+    if (invalid.isEmpty) return 'Periksa kembali isian yang ditandai merah.';
+    return 'Lengkapi atau perbaiki: ${invalid.join(', ')}.';
+  }
+
+  /// Tampilkan error di kotak bawah form, gulir ke sana, dan munculkan
+  /// snackbar agar pengguna langsung tahu kenapa laporan belum terkirim.
+  void _showValidationError(String message) {
+    setState(() => _errorMessage = message);
+    _showSnack(message);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final boxContext = _errorBoxKey.currentContext;
+      if (boxContext != null && boxContext.mounted) {
+        Scrollable.ensureVisible(
+          boxContext,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.5,
+        );
+      }
+    });
+  }
+
   /// Mengembalikan pesan error validasi di luar `Form`, atau null.
   String? _validateExtra(DateTime now) {
     final timeError = ReportRules.validateEventTime(
@@ -562,6 +602,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
       end: _useTimeRange ? _eventEnd : null,
     );
     if (timeError != null) return timeError;
+    if (_category == null) return 'Pilih kategori barang.';
     if (widget.isFound) {
       if (_keeping == null) return 'Pilih keberadaan barang saat ini.';
       if (_keeping == ItemKeeping.atSecurityPost &&
@@ -643,10 +684,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
     final now = DateTime.now();
     final extraError = _validateExtra(now);
     if (!formValid || extraError != null) {
-      setState(
-        () => _errorMessage =
-            extraError ?? 'Periksa kembali isian yang ditandai merah.',
-      );
+      _showValidationError(formValid ? extraError! : _invalidFieldsMessage());
       return;
     }
     if (!_validateCameraPhotos(now)) return;
@@ -911,29 +949,35 @@ class _AddReportScreenState extends State<AddReportScreen> {
                 autovalidateMode: _hasAttemptedSubmit
                     ? AutovalidateMode.onUserInteraction
                     : AutovalidateMode.disabled,
-                child: ListView(
+                // SingleChildScrollView (bukan ListView) agar SEMUA field
+                // selalu dibangun dan ikut divalidasi, termasuk yang sedang
+                // tergulir di luar layar.
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                  children: [
-                    if (_pendingDraft case final draft?) ...[
-                      _buildDraftBanner(draft),
-                      const SizedBox(height: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_pendingDraft case final draft?) ...[
+                        _buildDraftBanner(draft),
+                        const SizedBox(height: 14),
+                      ],
+                      if (locked) ...[
+                        const ReportBanner(
+                          icon: Icons.lock_outline,
+                          text:
+                              'Laporan ini sedang diverifikasi. Kategori, '
+                              'lokasi, dan detail pembeda dikunci sampai klaim '
+                              'selesai.',
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      for (final section in sections) ...[
+                        section,
+                        const SizedBox(height: 14),
+                      ],
+                      if (_errorMessage != null) _buildErrorBox(),
                     ],
-                    if (locked) ...[
-                      const ReportBanner(
-                        icon: Icons.lock_outline,
-                        text:
-                            'Laporan ini sedang diverifikasi. Kategori, '
-                            'lokasi, dan detail pembeda dikunci sampai klaim '
-                            'selesai.',
-                      ),
-                      const SizedBox(height: 14),
-                    ],
-                    for (final section in sections) ...[
-                      section,
-                      const SizedBox(height: 14),
-                    ],
-                    if (_errorMessage != null) _buildErrorBox(),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -1202,6 +1246,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Satu baris yang bisa digulir ke samping agar hemat ruang.
             SizedBox(
               height: 44,
               child: ListView.separated(
@@ -1587,7 +1632,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
 
   Widget _buildErrorBox() {
     return ReportBanner(
-      key: const Key('report-error'),
+      key: _errorBoxKey,
       tone: ReportBannerTone.danger,
       icon: Icons.error_outline,
       text: _errorMessage!,
