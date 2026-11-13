@@ -25,8 +25,6 @@ class Item {
   final double? longitude;
   ReportStatus status;
   final bool isOwner;
-  final double? latitude;
-  final double? longitude;
 
   Item({
     required this.id,
@@ -51,8 +49,6 @@ class Item {
     this.longitude,
     this.status = ReportStatus.active,
     this.isOwner = false,
-    this.latitude,
-    this.longitude,
   });
 
   bool get hasCoordinates => latitude != null && longitude != null;
