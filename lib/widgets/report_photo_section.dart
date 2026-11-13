@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'package:find_it/domain/report_rules.dart';
 import 'package:find_it/models/report_photo_entry.dart';
+import 'package:find_it/widgets/report/report_theme.dart';
 
-/// Bagian "Foto barang" pada form: tombol tambah (kamera/galeri), pratinjau
-/// maksimal 3 foto, hapus, dan tombol samarkan data sensitif per foto.
+/// Grid foto laporan: maksimal 3 foto + petak tambah (kamera/galeri),
+/// tombol hapus, dan tombol samarkan per foto.
+///
+/// [dark] dipakai untuk laporan Found (kartu hijau tua di atas form).
+/// [statusText] menampilkan hasil cek foto kamera, mis. "Diambil 2 menit
+/// lalu · 40 m dari titik laporan".
 class ReportPhotoSection extends StatelessWidget {
   const ReportPhotoSection({
     super.key,
@@ -15,10 +20,9 @@ class ReportPhotoSection extends StatelessWidget {
     required this.onRemove,
     required this.onBlur,
     this.onAddFromGallery,
+    this.dark = false,
+    this.statusText,
   });
-
-  static const _green = Color(0xFF0A5934);
-  static const _muted = Color(0xFF63777B);
 
   final List<ReportPhotoEntry> photos;
   final bool isFound;
@@ -28,162 +32,199 @@ class ReportPhotoSection extends StatelessWidget {
   final ValueChanged<int> onBlur;
 
   /// Cadangan galeri untuk laporan Found (kamera tidak tersedia / barang
-  /// sudah dititipkan). Null = tombol tidak ditampilkan.
+  /// sudah dititipkan). Null = tautan tidak ditampilkan.
   final VoidCallback? onAddFromGallery;
+  final bool dark;
+  final String? statusText;
+
+  Color get _muted => dark ? ReportColors.onDeepMuted : ReportColors.muted;
 
   @override
   Widget build(BuildContext context) {
     final canAdd = photos.length < ReportRules.maxPhotos;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (canAdd)
-          CustomPaint(
-            key: const Key('report-photo'),
-            painter: _DashedBorderPainter(
-              color: _green,
-              borderRadius: BorderRadius.circular(16),
+        GridView.count(
+          crossAxisCount: 3,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            for (var i = 0; i < photos.length; i++) _thumbnail(i),
+            if (canAdd) _addTile(),
+          ],
+        ),
+        if (statusText != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            key: const Key('report-photo-status'),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: dark ? ReportColors.greenDeepField : ReportColors.mint,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: SizedBox(
-              height: 80,
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                key: const Key('report-photo-add'),
-                onPressed: isBusy ? null : onAdd,
-                icon: isBusy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        isFound
-                            ? Icons.photo_camera_outlined
-                            : Icons.image_outlined,
-                      ),
-                label: Text(
-                  isBusy
-                      ? 'Memproses foto...'
-                      : isFound
-                      ? 'Ambil foto dengan kamera'
-                      : 'Pilih dari galeri',
+            child: Row(
+              children: [
+                Icon(
+                  Icons.verified_outlined,
+                  size: 16,
+                  color: dark ? ReportColors.limeText : ReportColors.green,
                 ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _green,
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 20,
-                  ),
-                  side: BorderSide.none,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    statusText!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: dark ? const Color(0xFFD6EFDB) : ReportColors.body,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
+        ],
         const SizedBox(height: 8),
         Text(
           isFound
-              ? 'Foto wajib diambil langsung dengan kamera, maksimal '
-                    '${ReportRules.maxPhotos} foto (${photos.length}/'
-                    '${ReportRules.maxPhotos}).'
-              : 'Pilih foto dari galeri, maksimal ${ReportRules.maxPhotos} foto '
-                    '(${photos.length}/${ReportRules.maxPhotos}).',
-          style: const TextStyle(color: _muted, fontSize: 12),
+              ? 'Wajib minimal 1 foto langsung dari kamera, maks. '
+                    '${ReportRules.maxPhotos}. Metadata lokasi dihapus otomatis.'
+              : 'Opsional, maks. ${ReportRules.maxPhotos} foto. Metadata '
+                    'lokasi foto dihapus otomatis.',
+          style: TextStyle(fontSize: 12, color: _muted),
         ),
-        if (isFound && canAdd && onAddFromGallery != null) ...[
-          const SizedBox(height: 4),
-          TextButton.icon(
-            key: const Key('report-photo-gallery-fallback'),
-            onPressed: isBusy ? null : onAddFromGallery,
-            icon: const Icon(Icons.image_outlined, size: 18),
-            label: const Text('Pakai foto dari galeri'),
-            style: TextButton.styleFrom(
-              foregroundColor: _green,
-              padding: EdgeInsets.zero,
+        if (isFound && canAdd && onAddFromGallery != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('report-photo-gallery-fallback'),
+              onPressed: isBusy ? null : onAddFromGallery,
+              icon: const Icon(Icons.image_outlined, size: 18),
+              label: const Text('Pakai foto dari galeri'),
+              style: TextButton.styleFrom(
+                foregroundColor: dark
+                    ? ReportColors.limeText
+                    : ReportColors.green,
+                padding: EdgeInsets.zero,
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
-          const Text(
-            'Foto galeri akan ditandai "tidak diambil langsung" pada laporan.',
-            style: TextStyle(color: _muted, fontSize: 11),
-          ),
-        ],
-        if (photos.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 150,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: photos.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, index) => _thumbnail(index),
-            ),
-          ),
-        ],
       ],
+    );
+  }
+
+  Widget _addTile() {
+    final color = dark ? Colors.white : ReportColors.green;
+    return Material(
+      color: dark ? ReportColors.greenDeepField : ReportColors.surfaceSoft,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: dark ? ReportColors.lime : ReportColors.green,
+          width: 1.5,
+        ),
+      ),
+      child: InkWell(
+        key: const Key('report-photo-add'),
+        customBorder: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        onTap: isBusy ? null : onAdd,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isBusy)
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              )
+            else
+              Icon(
+                isFound ? Icons.photo_camera_outlined : Icons.image_outlined,
+                color: color,
+              ),
+            const SizedBox(height: 6),
+            Text(
+              isBusy
+                  ? 'Memproses'
+                  : isFound
+                  ? 'Kamera'
+                  : 'Galeri',
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _thumbnail(int index) {
     final photo = photos[index];
-    return SizedBox(
-      width: 150,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
       child: Stack(
+        fit: StackFit.expand,
         children: [
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.memory(photo.bytes, fit: BoxFit.cover),
-            ),
-          ),
+          Image.memory(photo.bytes, fit: BoxFit.cover),
           if (photo.isUnverified)
-            Positioned(
+            const Positioned(
               top: 6,
               left: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFB45309),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Galeri',
-                  style: TextStyle(color: Colors.white, fontSize: 10),
-                ),
-              ),
+              child: _Badge(label: 'Galeri', color: Color(0xFFB45309)),
             ),
           Positioned(
             top: 4,
             right: 4,
-            child: _circleButton(
+            child: _roundButton(
               key: Key('photo-remove-$index'),
               icon: Icons.close,
               tooltip: 'Hapus foto',
-              onPressed: isBusy ? null : () => onRemove(index),
+              onTap: isBusy ? null : () => onRemove(index),
             ),
           ),
           Positioned(
             left: 6,
-            right: 6,
             bottom: 6,
-            child: FilledButton.tonalIcon(
-              key: Key('photo-blur-$index'),
-              onPressed: isBusy ? null : () => onBlur(index),
-              icon: Icon(
-                photo.blurred ? Icons.check_circle : Icons.blur_on,
-                size: 16,
-              ),
-              label: Text(
-                photo.blurred ? 'Sudah diblur' : 'Samarkan',
-                style: const TextStyle(fontSize: 11),
-              ),
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                backgroundColor: Colors.white.withValues(alpha: 0.92),
-                foregroundColor: _green,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Material(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                key: Key('photo-blur-$index'),
+                borderRadius: BorderRadius.circular(999),
+                onTap: isBusy ? null : () => onBlur(index),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        photo.blurred ? Icons.check : Icons.blur_on,
+                        size: 12,
+                        color: ReportColors.green,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        photo.blurred ? 'Diblur' : 'Samarkan',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: ReportColors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -192,11 +233,11 @@ class ReportPhotoSection extends StatelessWidget {
     );
   }
 
-  Widget _circleButton({
+  Widget _roundButton({
     required Key key,
     required IconData icon,
     required String tooltip,
-    required VoidCallback? onPressed,
+    required VoidCallback? onTap,
   }) {
     return Material(
       color: Colors.black54,
@@ -204,12 +245,12 @@ class ReportPhotoSection extends StatelessWidget {
       child: InkWell(
         key: key,
         customBorder: const CircleBorder(),
-        onTap: onPressed,
+        onTap: onTap,
         child: Tooltip(
           message: tooltip,
           child: Padding(
             padding: const EdgeInsets.all(5),
-            child: Icon(icon, size: 16, color: Colors.white),
+            child: Icon(icon, size: 14, color: Colors.white),
           ),
         ),
       ),
@@ -217,33 +258,23 @@ class ReportPhotoSection extends StatelessWidget {
   }
 }
 
-class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({required this.color, required this.borderRadius});
-
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.color});
+  final String label;
   final Color color;
-  final BorderRadius borderRadius;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final path = Path()..addRRect(borderRadius.toRRect(rect.deflate(1)));
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final end = (distance + 7).clamp(0.0, metric.length).toDouble();
-        canvas.drawPath(metric.extractPath(distance, end), paint);
-        distance = end + 4;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) {
-    return oldDelegate.color != color ||
-        oldDelegate.borderRadius != borderRadius;
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(color: Colors.white, fontSize: 10),
+      ),
+    );
   }
 }

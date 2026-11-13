@@ -6,7 +6,9 @@ import 'package:find_it/domain/report_rules.dart';
 import 'package:find_it/models/item.dart';
 import 'package:find_it/routes/app_routes.dart';
 import 'package:find_it/services/app_session.dart';
-import 'package:find_it/widgets/item_visuals.dart';
+import 'package:find_it/widgets/report/report_actions.dart';
+import 'package:find_it/widgets/report/report_components.dart';
+import 'package:find_it/widgets/report/report_theme.dart';
 
 /// Detail laporan (FR-R03) beserta aksi pemilik: ubah (FR-R04), hapus
 /// (FR-R05), perpanjang & tutup laporan (FR-R10).
@@ -23,520 +25,574 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  static const _green = Color(0xFF0A5934);
-  static const _muted = Color(0xFF595858);
+  static const _heroHeight = 320.0;
 
   late final ItemRepository _repository;
+  late final ReportActions _actions;
   late Item _item;
   int _photoIndex = 0;
 
-  String? get _userId => AppSession.userId;
-  bool get _isOwner => _item.isOwnedBy(_userId);
+  bool get _isOwner => _item.isOwnedBy(AppSession.userId);
 
   @override
   void initState() {
     super.initState();
     _repository = widget.repository ?? AppData.repository;
+    _actions = ReportActions(repository: _repository);
     // Ambil versi terbaru dari repository (bisa saja sudah diubah).
     _item = _repository.findById(widget.item.id) ?? widget.item;
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-      );
+  // ------------------------------------------------------------- Aksi
+
+  void _apply(ReportActionResult? result) {
+    if (!mounted || result == null) return;
+    switch (result) {
+      case ReportUpdated(:final item):
+        setState(() {
+          _item = item;
+          _photoIndex = 0;
+        });
+      case ReportDeleted():
+        Navigator.pop<String>(context, _item.id);
+    }
   }
 
-  void _afterChange(Item updated, String message) {
-    AppData.matchingService.refreshMatches();
-    setState(() {
-      _item = updated;
-      _photoIndex = 0;
-    });
-    _showMessage(message);
-  }
-
-  Future<void> _editReport() async {
+  Future<void> _edit() async {
     final updated = await Navigator.pushNamed<Item>(
       context,
       AppRoutes.editReport,
       arguments: _item,
     );
     if (!mounted || updated == null) return;
-    // Form sudah menyimpan ke repository.
-    _afterChange(updated, 'Laporan berhasil diperbarui.');
-  }
-
-  Future<void> _deleteReport() async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Hapus laporan?'),
-        content: const Text(
-          'Laporan akan disembunyikan dari semua pengguna dan tidak ikut '
-          'pencocokan lagi. Jika barang sudah ketemu, sebaiknya pilih '
-          '"Tutup laporan" agar riwayatnya tetap ada.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Hapus'),
-          ),
-        ],
+    // Form sudah menyimpan ke repository dan memicu matching.
+    setState(() {
+      _item = updated;
+      _photoIndex = 0;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Laporan berhasil diperbarui.'),
+        behavior: SnackBarBehavior.floating,
       ),
     );
-    if (!mounted || shouldDelete != true) return;
-    try {
-      _repository.softDelete(_item.id, userId: _userId);
-      AppData.matchingService.refreshMatches();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan dihapus.')),
-      );
-      Navigator.pop<String>(context, _item.id);
-    } on StateError catch (error) {
-      _showMessage(error.message);
-    }
   }
 
-  Future<void> _closeReport() async {
-    final reasons = _item.isFound
-        ? const [
-            'Barang sudah dikembalikan langsung ke pemiliknya',
-            'Barang diserahkan ke pihak kampus (satpam/TU)',
-            'Lainnya',
-          ]
-        : const [
-            'Barang sudah saya temukan sendiri',
-            'Tidak lagi mencari barang ini',
-            'Lainnya',
-          ];
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('Tutup laporan'),
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Text(
-              'Laporan ditandai selesai dan tidak tampil di pencarian maupun '
-              'pencocokan. Pilih alasannya:',
-              style: TextStyle(fontSize: 13),
-            ),
-          ),
-          for (final option in reasons)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, option),
-              child: Text(option),
-            ),
-        ],
-      ),
-    );
-    if (!mounted || reason == null) return;
-    try {
-      final closed = _repository.close(
-        _item.id,
-        userId: _userId,
-        reason: reason,
-      );
-      _afterChange(closed, 'Laporan ditutup.');
-    } on StateError catch (error) {
-      _showMessage(error.message);
-    }
-  }
+  void _openMap() => Navigator.pushNamed<void>(
+    context,
+    AppRoutes.mapDiscovery,
+    arguments: _item,
+  );
 
-  void _extendReport() {
-    try {
-      final extended = _repository.extend(_item.id, userId: _userId);
-      _afterChange(
-        extended,
-        'Masa berlaku diperpanjang ${ReportRules.expiryDays} hari.',
-      );
-    } on StateError catch (error) {
-      _showMessage(error.message);
-    }
-  }
+  void _openChat() =>
+      Navigator.pushNamed<void>(context, AppRoutes.chat, arguments: _item);
 
-  String _formatDate(DateTime date) =>
-      '${date.day.toString().padLeft(2, '0')}/'
-      '${date.month.toString().padLeft(2, '0')}/${date.year}';
+  // ------------------------------------------------------------ Build
 
   @override
   Widget build(BuildContext context) {
     final item = _item;
-    final now = DateTime.now();
     final isOwner = _isOwner;
-    final needsReminder = ReportRules.needsExpiryReminder(item, now);
-    final isExpired = item.status == ReportStatus.expired;
-    final typeColor = item.isFound
-        ? const Color(0xFF045436)
-        : const Color(0xFFEF4444);
+    final canChat =
+        !isOwner &&
+        (item.status == ReportStatus.active ||
+            item.status == ReportStatus.inVerification);
+
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        title: const Text(
-          'Detail Laporan',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
-        ),
-        centerTitle: true,
+      backgroundColor: ReportColors.surface,
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(child: _buildHero(item)),
+          SliverToBoxAdapter(
+            child: Transform.translate(
+              offset: const Offset(0, -28),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: ReportColors.surface,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _buildBody(item, isOwner),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+      bottomNavigationBar: canChat
+          ? ReportBottomBar(
+              buttonKey: const Key('detail-chat'),
+              label: 'Chat pelapor',
+              onPressed: _openChat,
+            )
+          : null,
+    );
+  }
+
+  Widget _buildHero(Item item) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return SizedBox(
+      height: _heroHeight + topInset,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Center(child: _buildPhotos(item)),
-          if (item.isFound && item.hasUnverifiedPhoto) ...[
-            const SizedBox(height: 10),
-            _notice(
-              key: const Key('detail-unverified-photo'),
-              icon: Icons.info_outline,
-              text:
-                  'Sebagian foto tidak diambil langsung dengan kamera saat '
-                  'barang ditemukan.',
+          _buildPhotos(item),
+          Positioned(
+            left: 16,
+            top: topInset + 12,
+            child: ReportIconButton(
+              icon: Icons.arrow_back,
+              tooltip: 'Kembali',
+              filled: true,
+              onPressed: () => Navigator.maybePop(context),
             ),
-          ],
-          const SizedBox(height: 22),
-          Text(
-            item.nameItem,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 6),
-          Text(item.subtitle, style: const TextStyle(color: _muted)),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              StatusPill(
-                label: item.isFound ? 'Ditemukan' : 'Kehilangan',
-                color: typeColor,
-              ),
-              if (item.status != ReportStatus.active)
-                StatusPill(
-                  label: item.statusLabel,
-                  color: legacyReportStatusColor(item.status),
-                ),
-              _pill(item.category),
-              if (item.category2 case final category2?) _pill(category2),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _ItemDetailTag(
-                icon: Icons.location_on_outlined,
-                label: item.isLocationApproximate
-                    ? '${item.location} (perkiraan)'
-                    : item.location,
-              ),
-              _ItemDetailTag(
-                icon: Icons.schedule,
-                label: item.eventDateLabel,
-              ),
-              if (item.color case final color?)
-                _ItemDetailTag(icon: Icons.palette_outlined, label: color),
-              if (item.brand case final brand?)
-                _ItemDetailTag(
-                  icon: Icons.branding_watermark_outlined,
-                  label: brand,
-                ),
-              if (item.keeping case final keeping?)
-                _ItemDetailTag(
-                  icon: Icons.inventory_2_outlined,
-                  label: item.keepingNote == null
-                      ? keeping.label
-                      : '${keeping.label}: ${item.keepingNote}',
-                ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            item.description,
-            style: const TextStyle(fontSize: 14, height: 1.45),
-          ),
-          const SizedBox(height: 14),
-          _buildMetaInfo(item, isOwner, isExpired),
-          if (item.closedReason case final reason?) ...[
-            const SizedBox(height: 12),
-            _notice(
-              icon: Icons.task_alt,
-              text: 'Ditutup oleh pelapor: $reason',
-            ),
-          ],
-          // FR-R08: detail pembeda hanya terlihat oleh pemilik laporan.
-          if (isOwner && item.secretDetail != null) ...[
-            const SizedBox(height: 16),
-            _buildSecretCard(item),
-          ],
-          if (isOwner && (needsReminder || isExpired)) ...[
-            const SizedBox(height: 16),
-            _notice(
-              key: const Key('detail-expiry-banner'),
-              icon: Icons.timer_outlined,
-              text: isExpired
-                  ? 'Laporan ini sudah kedaluwarsa dan tidak tampil ke '
-                        'pengguna lain. Perpanjang agar aktif kembali.'
-                  : 'Laporan akan kedaluwarsa dalam '
-                        '${ReportRules.daysUntilExpiry(item, now)} hari.',
-            ),
-          ],
-          const Divider(height: 32),
           if (item.hasCoordinates)
-            OutlinedButton.icon(
-              key: const Key('detail-open-map'),
-              onPressed: () => Navigator.pushNamed<void>(
-                context,
-                AppRoutes.mapDiscovery,
-                arguments: item,
+            Positioned(
+              right: 16,
+              top: topInset + 12,
+              child: ReportIconButton(
+                key: const Key('detail-open-map'),
+                icon: Icons.map_outlined,
+                tooltip: 'Lihat di peta kampus',
+                filled: true,
+                onPressed: _openMap,
               ),
-              icon: const Icon(Icons.map_outlined),
-              label: const Text('Lihat Lokasi di Peta Kampus'),
             ),
-          if (!isOwner &&
-              (item.status == ReportStatus.active ||
-                  item.status == ReportStatus.inVerification)) ...[
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              key: const Key('detail-chat'),
-              onPressed: () => Navigator.pushNamed<void>(
-                context,
-                AppRoutes.chat,
-                arguments: item,
+          if (item.photos.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 44,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < item.photos.length; i++)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: i == _photoIndex ? 20 : 6,
+                      height: 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: i == _photoIndex
+                            ? ReportColors.green
+                            : Colors.white70,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                ],
               ),
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('Chat Pelapor'),
             ),
-          ],
-          if (isOwner) ...[
-            const SizedBox(height: 10),
-            ..._ownerActions(item, needsReminder || isExpired),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildMetaInfo(Item item, bool isOwner, bool isExpired) {
+  Widget _buildPhotos(Item item) {
+    if (item.photos.isNotEmpty) {
+      return PageView.builder(
+        key: const Key('detail-photos'),
+        itemCount: item.photos.length,
+        onPageChanged: (index) => setState(() => _photoIndex = index),
+        itemBuilder: (_, index) =>
+            Image.memory(item.photos[index], fit: BoxFit.cover),
+      );
+    }
+    if (item.assetPath case final asset?) {
+      return Image.asset(asset, fit: BoxFit.cover);
+    }
+    return Container(
+      color: ReportColors.typeTint(item.isFound),
+      alignment: Alignment.center,
+      child: Icon(
+        ReportArtwork.iconFor(item.category),
+        size: 110,
+        color: ReportColors.typeColor(item.isFound),
+      ),
+    );
+  }
+
+  List<Widget> _buildBody(Item item, bool isOwner) {
+    final now = DateTime.now();
+    final needsReminder = ReportRules.needsExpiryReminder(item, now);
+    final isExpired = item.status == ReportStatus.expired;
+    return [
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          ReportTag.type(item.isFound),
+          if (item.status != ReportStatus.active)
+            ReportTag(
+              item.statusLabel,
+              foreground: ReportColors.warn,
+              background: ReportColors.warnTint,
+            ),
+          ReportTag(
+            item.category,
+            foreground: ReportColors.green,
+            background: const Color(0xFFE1F3E5),
+          ),
+          if (item.category2 case final category2?)
+            ReportTag(
+              category2,
+              foreground: ReportColors.green,
+              background: const Color(0xFFE1F3E5),
+            ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      Text(
+        item.nameItem,
+        style: const TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          color: ReportColors.ink,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        item.description,
+        style: const TextStyle(
+          fontSize: 14,
+          height: 1.6,
+          color: ReportColors.body,
+        ),
+      ),
+      if (item.isFound && item.hasUnverifiedPhoto) ...[
+        const SizedBox(height: 12),
+        const ReportBanner(
+          key: Key('detail-unverified-photo'),
+          icon: Icons.photo_outlined,
+          text:
+              'Sebagian foto tidak diambil langsung dengan kamera saat '
+              'barang ditemukan.',
+        ),
+      ],
+      const SizedBox(height: 18),
+      _buildInfoGrid(item),
+      if (item.closedReason case final reason?) ...[
+        const SizedBox(height: 14),
+        ReportBanner(
+          tone: ReportBannerTone.success,
+          icon: Icons.task_alt,
+          text: 'Ditutup oleh pelapor: $reason',
+        ),
+      ],
+      const SizedBox(height: 14),
+      _buildReporterCard(item),
+      if (!isOwner && item.isFound && item.secretDetail != null) ...[
+        const SizedBox(height: 14),
+        const ReportBanner(
+          tone: ReportBannerTone.info,
+          icon: Icons.lock_outline,
+          text:
+              'Penemu menyimpan ciri rahasia barang ini. Saat mengajukan '
+              'klaim lewat menu Matching, Anda akan diminta menyebutkannya.',
+        ),
+      ],
+      if (isOwner) ...[
+        if (item.secretDetail != null) ...[
+          const SizedBox(height: 14),
+          _buildSecretCard(item),
+        ],
+        if (needsReminder || isExpired) ...[
+          const SizedBox(height: 14),
+          ReportBanner(
+            key: const Key('detail-expiry-banner'),
+            icon: Icons.timer_outlined,
+            text: isExpired
+                ? 'Laporan ini sudah kedaluwarsa dan tidak tampil ke '
+                      'pengguna lain. Perpanjang agar aktif kembali.'
+                : 'Laporan akan kedaluwarsa dalam '
+                      '${ReportRules.daysUntilExpiry(item, now)} hari.',
+          ),
+        ],
+        const SizedBox(height: 20),
+        ..._buildOwnerActions(item, needsReminder || isExpired),
+      ],
+      const SizedBox(height: 24),
+    ];
+  }
+
+  Widget _buildInfoGrid(Item item) {
+    final colorBrand = [item.color, item.brand].whereType<String>().join(' · ');
+    final tiles = <Widget>[
+      ReportInfoTile(
+        label: 'Lokasi',
+        value: item.isLocationApproximate
+            ? '${item.location} (perkiraan)'
+            : item.location,
+      ),
+      ReportInfoTile(
+        label: item.isFound ? 'Ditemukan' : 'Waktu hilang',
+        value: item.eventDateLabel,
+      ),
+      if (colorBrand.isNotEmpty)
+        ReportInfoTile(label: 'Warna · Merek', value: colorBrand),
+      if (item.keeping case final keeping?)
+        ReportInfoTile(
+          label: 'Barang sekarang',
+          value: item.keepingNote ?? keeping.label,
+        ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = (constraints.maxWidth - 10) / 2;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final tile in tiles) SizedBox(width: width, child: tile),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildReporterCard(Item item) {
     final lines = <String>[
-      if (item.reporter case final reporter?) 'Pelapor: $reporter',
       if (item.createdAt case final created?)
-        'Dilaporkan: ${Item.formatDateTime(created)}',
+        'Dilaporkan ${Item.formatDateTime(created)}',
       // Riwayat edit publik (anti "umpan lalu ganti"): hanya nama field.
       if (item.editHistory.isNotEmpty)
         'Diubah ${item.editHistory.length}× · terakhir '
             '${Item.formatDateTime(item.editHistory.last.at)} '
             '(${item.editHistory.last.fields.join(', ')})',
-      if (isOwner && item.expiresAt != null)
-        isExpired
+      if (_isOwner && item.expiresAt != null)
+        item.status == ReportStatus.expired
             ? 'Kedaluwarsa sejak ${_formatDate(item.expiresAt!)}'
             : 'Berlaku hingga ${_formatDate(item.expiresAt!)}',
     ];
-    return Column(
+    return Container(
       key: const Key('detail-meta'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final line in lines)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              line,
-              style: const TextStyle(fontSize: 12, color: _muted),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ReportColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE1F3E5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.person_outline, color: ReportColors.green),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isOwner ? 'Laporan Anda' : (item.reporter ?? 'Pelapor'),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: ReportColors.ink,
+                  ),
+                ),
+                for (final line in lines)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      line,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: ReportColors.muted,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildSecretCard(Item item) {
     return Container(
       key: const Key('secret-detail-card'),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
+        color: ReportColors.greenDeep,
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Row(
             children: [
-              Icon(Icons.lock_outline, size: 16),
+              Icon(Icons.lock_outline, size: 16, color: ReportColors.limeText),
               SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'Detail pembeda (hanya Anda yang melihat)',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: ReportColors.onDeepMuted,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(item.secretDetail!, style: const TextStyle(fontSize: 13)),
+          const SizedBox(height: 8),
+          Text(
+            item.secretDetail!,
+            style: const TextStyle(fontSize: 14, color: Colors.white),
+          ),
         ],
       ),
     );
   }
 
-  List<Widget> _ownerActions(Item item, bool showExtend) {
-    final userId = _userId;
-    final canEdit = ReportRules.canEdit(item, userId);
-    final canDelete = ReportRules.canDelete(item, userId);
-    final canClose = ReportRules.canClose(item, userId);
+  List<Widget> _buildOwnerActions(Item item, bool showExtend) {
+    final userId = AppSession.userId;
     final verifying = item.status == ReportStatus.inVerification;
-    return [
-      if (ReportRules.canExtend(item, userId) && showExtend) ...[
-        FilledButton.icon(
+    final buttons = <Widget>[
+      if (ReportRules.canExtend(item, userId) && showExtend)
+        _ActionButton.filled(
           key: const Key('extend-report'),
-          onPressed: _extendReport,
-          icon: const Icon(Icons.update),
-          label: const Text('Perpanjang ${ReportRules.expiryDays} hari'),
+          icon: Icons.update,
+          label: 'Perpanjang ${ReportRules.expiryDays} hari',
+          onPressed: () => _apply(_actions.extend(context, item)),
         ),
-        const SizedBox(height: 10),
-      ],
-      if (canEdit) ...[
-        OutlinedButton.icon(
+      if (ReportRules.canEdit(item, userId))
+        _ActionButton.outlined(
           key: const Key('edit-report'),
-          onPressed: _editReport,
-          icon: const Icon(Icons.edit_outlined),
-          label: Text(verifying ? 'Ubah Laporan (sebagian)' : 'Ubah Laporan'),
+          icon: Icons.edit_outlined,
+          label: verifying ? 'Ubah laporan (sebagian)' : 'Ubah laporan',
+          onPressed: _edit,
         ),
-        const SizedBox(height: 10),
-      ],
-      if (canClose) ...[
-        OutlinedButton.icon(
+      if (ReportRules.canClose(item, userId))
+        _ActionButton.outlined(
           key: const Key('close-report'),
-          onPressed: _closeReport,
-          icon: const Icon(Icons.task_alt),
-          label: Text(
-            item.isFound ? 'Tutup laporan' : 'Barang sudah ketemu / tutup',
-          ),
+          icon: Icons.task_alt,
+          label: item.isFound ? 'Tutup laporan' : 'Barang sudah ketemu',
+          onPressed: () async => _apply(await _actions.close(context, item)),
         ),
-        const SizedBox(height: 10),
-      ],
-      OutlinedButton.icon(
+      _ActionButton.outlined(
         key: const Key('delete-report'),
-        onPressed: canDelete ? _deleteReport : null,
-        style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
-        icon: const Icon(Icons.delete_outline),
-        label: const Text('Hapus Laporan'),
+        icon: Icons.delete_outline,
+        label: 'Hapus laporan',
+        danger: true,
+        onPressed: ReportRules.canDelete(item, userId)
+            ? () async => _apply(await _actions.delete(context, item))
+            : null,
       ),
-      if (verifying) ...[
-        const SizedBox(height: 8),
+    ];
+    return [
+      const Text(
+        'Kelola laporan',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: ReportColors.ink,
+        ),
+      ),
+      const SizedBox(height: 10),
+      for (final button in buttons) ...[button, const SizedBox(height: 10)],
+      if (verifying)
         const Text(
           'Laporan tidak dapat dihapus atau ditutup selama klaim sedang '
           'diverifikasi. Selesaikan lewat menu Matching & Klaim.',
-          style: TextStyle(fontSize: 12, color: _muted),
+          style: TextStyle(fontSize: 12, color: ReportColors.muted),
         ),
-      ],
     ];
   }
 
-  Widget _buildPhotos(Item item) {
-    if (item.photos.length <= 1) {
-      return LegacyItemArtwork(item: item, size: 277);
-    }
-    return Column(
-      children: [
-        SizedBox(
-          width: 277,
-          height: 277,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: PageView.builder(
-              key: const Key('detail-photos'),
-              itemCount: item.photos.length,
-              onPageChanged: (index) => setState(() => _photoIndex = index),
-              itemBuilder: (_, index) =>
-                  Image.memory(item.photos[index], fit: BoxFit.cover),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < item.photos.length; i++)
-              Container(
-                width: 8,
-                height: 8,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: i == _photoIndex ? _green : const Color(0xFFD5E2E0),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _pill(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(text, style: const TextStyle(color: _green, fontSize: 11)),
-    );
-  }
-
-  Widget _notice({Key? key, required IconData icon, required String text}) {
-    return Container(
-      key: key,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF4DC),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: const Color(0xFF8A4B08)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF5C3A06)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  String _formatDate(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/'
+      '${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
-class _ItemDetailTag extends StatelessWidget {
+/// Tombol aksi pemilik dengan tinggi seragam.
+class _ActionButton extends StatelessWidget {
+  const _ActionButton._({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    required this.filled,
+    this.danger = false,
+  });
+
+  const _ActionButton.filled({
+    Key? key,
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) : this._(
+         key: key,
+         icon: icon,
+         label: label,
+         onPressed: onPressed,
+         filled: true,
+       );
+
+  const _ActionButton.outlined({
+    Key? key,
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    bool danger = false,
+  }) : this._(
+         key: key,
+         icon: icon,
+         label: label,
+         onPressed: onPressed,
+         filled: false,
+         danger: danger,
+       );
+
   final IconData icon;
   final String label;
-
-  const _ItemDetailTag({required this.icon, required this.label});
+  final VoidCallback? onPressed;
+  final bool filled;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 6),
-          Flexible(child: Text(label, style: const TextStyle(fontSize: 12))),
-        ],
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+    );
+    if (filled) {
+      return FilledButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          backgroundColor: ReportColors.green,
+          minimumSize: const Size.fromHeight(50),
+          shape: shape,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+    final color = danger ? ReportColors.lost : ReportColors.ink;
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        minimumSize: const Size.fromHeight(50),
+        side: BorderSide(
+          color: danger
+              ? ReportColors.lost.withValues(alpha: 0.5)
+              : ReportColors.outline,
+          width: 1.5,
+        ),
+        shape: shape,
+        textStyle: const TextStyle(fontWeight: FontWeight.w700),
       ),
     );
   }

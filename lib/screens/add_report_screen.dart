@@ -17,6 +17,8 @@ import 'package:find_it/services/device_image_picker.dart';
 import 'package:find_it/services/location_service.dart';
 import 'package:find_it/utils/campus_locations.dart';
 import 'package:find_it/utils/validators.dart';
+import 'package:find_it/widgets/report/report_components.dart';
+import 'package:find_it/widgets/report/report_theme.dart';
 import 'package:find_it/widgets/report_photo_section.dart';
 
 /// Form buat/ubah laporan (FR-R01, FR-R02, FR-R04).
@@ -41,11 +43,6 @@ class AddReportScreen extends StatefulWidget {
 }
 
 class _AddReportScreenState extends State<AddReportScreen> {
-  static const _green = Color(0xFF0A5934);
-  static const _ink = Color(0xFF14282C);
-  static const _muted = Color(0xFF63777B);
-  static const _outline = Color(0xFF9BAEB2);
-
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -505,7 +502,11 @@ class _AddReportScreenState extends State<AddReportScreen> {
     final shouldBlur = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        icon: const Icon(Icons.privacy_tip_outlined, color: _green, size: 36),
+        icon: const Icon(
+          Icons.privacy_tip_outlined,
+          color: ReportColors.green,
+          size: 36,
+        ),
         title: const Text('Foto berisi data pribadi?'),
         content: const Text(
           'Kategori ini sering memuat nama, NIM, nomor kartu, atau foto '
@@ -853,109 +854,325 @@ class _AddReportScreenState extends State<AddReportScreen> {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  // ------------------------------------------------------------- Build
+  // =============================================================== Build
+  //
+  // Susunan mengikuti kanvas desain:
+  //  - Hilang   : 1 Barang · 2 Kapan & di mana · 3 Foto · Data privat
+  //  - Ditemukan: Foto (kartu gelap) · Detail barang · Keberadaan barang ·
+  //               Pertanyaan untuk pemilik
 
   @override
   Widget build(BuildContext context) {
     final locked = _coreLocked;
+    final sections = widget.isFound
+        ? <Widget>[
+            _buildPhotoCard(),
+            _buildFoundDetailsCard(locked),
+            _buildKeepingCard(),
+            _buildPrivateCard(locked),
+          ]
+        : <Widget>[
+            _buildItemCard(locked),
+            _buildWhenWhereCard(locked),
+            _buildPhotoCard(),
+            _buildPrivateCard(locked),
+          ];
+
     return PopScope<Item>(
       canPop: _allowPop,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _handlePop();
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          foregroundColor: _ink,
-          leading: IconButton(
-            tooltip: 'Kembali',
-            onPressed: _isSubmitting ? null : _handlePop,
-            icon: const Icon(Icons.arrow_back),
-          ),
-          title: Text(
-            _isEdit
-                ? 'Ubah Laporan'
-                : widget.isFound
-                ? 'Lapor Barang Ditemukan'
-                : 'Lapor Barang Hilang',
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+        backgroundColor: ReportColors.background,
+        body: Column(
+          children: [
+            ReportHeader(
+              title: _isEdit
+                  ? 'Ubah laporan'
+                  : widget.isFound
+                  ? 'Lapor barang ditemukan'
+                  : 'Lapor barang hilang',
+              subtitle: _isEdit
+                  ? 'Perubahan tercatat di riwayat laporan'
+                  : 'Isian disimpan sebagai draf bila Anda keluar',
+              onBack: _isSubmitting ? null : _handlePop,
+              trailing: ReportTag(
+                widget.isFound ? 'TEMUAN' : 'HILANG',
+                foreground: widget.isFound ? Colors.white : ReportColors.lost,
+                background: widget.isFound
+                    ? ReportColors.green
+                    : ReportColors.lostTint,
+              ),
             ),
-          ),
-        ),
-        body: SafeArea(
-          top: false,
-          child: Form(
-            key: _formKey,
-            autovalidateMode: _hasAttemptedSubmit
-                ? AutovalidateMode.onUserInteraction
-                : AutovalidateMode.disabled,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-              children: [
-                _buildReportTypeSelector(),
-                if (_pendingDraft case final draft?) ...[
-                  const SizedBox(height: 12),
-                  _buildDraftBanner(draft),
-                ],
-                if (locked) ...[
-                  const SizedBox(height: 12),
-                  _infoBanner(
-                    'Laporan ini sedang diverifikasi. Kategori, lokasi, dan '
-                    'detail pembeda dikunci sampai klaim selesai.',
-                  ),
-                ],
-                const SizedBox(height: 18),
-                ..._buildIdentitySection(locked),
-                const SizedBox(height: 16),
-                ..._buildTimeSection(),
-                const SizedBox(height: 16),
-                ..._buildLocationSection(locked),
-                if (widget.isFound) ...[
-                  const SizedBox(height: 16),
-                  ..._buildKeepingSection(),
-                ],
-                const SizedBox(height: 16),
-                ..._buildAttributeSection(),
-                const SizedBox(height: 16),
-                _fieldLabel('Foto barang', required: widget.isFound),
-                const SizedBox(height: 8),
-                ReportPhotoSection(
-                  photos: _photos,
-                  isFound: widget.isFound,
-                  isBusy: _isPickingPhoto || _isSubmitting,
-                  onAdd: _addPhoto,
-                  onAddFromGallery: _allowGalleryFallback
-                      ? () => _addPhoto(fromGallery: true)
-                      : null,
-                  onRemove: _removePhoto,
-                  onBlur: _blurPhoto,
+            Expanded(
+              child: Form(
+                key: _formKey,
+                autovalidateMode: _hasAttemptedSubmit
+                    ? AutovalidateMode.onUserInteraction
+                    : AutovalidateMode.disabled,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  children: [
+                    if (_pendingDraft case final draft?) ...[
+                      _buildDraftBanner(draft),
+                      const SizedBox(height: 14),
+                    ],
+                    if (locked) ...[
+                      const ReportBanner(
+                        icon: Icons.lock_outline,
+                        text:
+                            'Laporan ini sedang diverifikasi. Kategori, '
+                            'lokasi, dan detail pembeda dikunci sampai klaim '
+                            'selesai.',
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    for (final section in sections) ...[
+                      section,
+                      const SizedBox(height: 14),
+                    ],
+                    if (_errorMessage != null) _buildErrorBox(),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                ..._buildPrivateSection(locked),
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 14),
-                  _buildErrorBox(),
-                ],
-                const SizedBox(height: 12),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
-        bottomNavigationBar: _buildSubmitBar(),
+        bottomNavigationBar: ReportBottomBar(
+          buttonKey: const Key('submit-report'),
+          label: _isEdit
+              ? 'Simpan perubahan'
+              : widget.isFound
+              ? 'Publikasikan temuan'
+              : 'Publikasikan laporan',
+          busy: _isSubmitting,
+          busyLabel: _photos.isEmpty
+              ? 'Mengirim laporan...'
+              : 'Mengunggah ${_photos.length} foto...',
+          onPressed: _submitReport,
+        ),
       ),
     );
   }
 
-  List<Widget> _buildIdentitySection(bool locked) {
-    return [
-      _fieldLabel('Nama barang', required: true),
-      const SizedBox(height: 8),
-      TextFormField(
+  // ------------------------------------------------------- Kartu: Hilang
+
+  Widget _buildItemCard(bool locked) {
+    return ReportSectionCard(
+      step: 1,
+      title: 'Barang apa yang hilang?',
+      children: [
+        _nameField(),
+        _categoryField(locked),
+        _descriptionField(),
+        _colorBrandRow(),
+      ],
+    );
+  }
+
+  Widget _buildWhenWhereCard(bool locked) {
+    return ReportSectionCard(
+      step: 2,
+      title: 'Kapan & di mana?',
+      children: [
+        _timeRangeSwitch(),
+        _timeTiles(),
+        _locationField(locked),
+        _approximateCheckbox(locked),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------- Kartu: Ditemukan
+
+  Widget _buildFoundDetailsCard(bool locked) {
+    return ReportSectionCard(
+      title: 'Detail barang',
+      children: [
+        _nameField(),
+        _categoryField(locked),
+        _descriptionField(),
+        _colorBrandRow(),
+        _timeTiles(),
+        _locationField(locked),
+      ],
+    );
+  }
+
+  Widget _buildKeepingCard() {
+    return ReportSectionCard(
+      title: 'Barang sekarang di mana? *',
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: ReportOptionCard(
+                key: const Key('report-keeping-withFinder'),
+                icon: Icons.shopping_bag_outlined,
+                label: 'Saya bawa',
+                selected: _keeping == ItemKeeping.withFinder,
+                onTap: _isSubmitting
+                    ? null
+                    : () => _setKeeping(ItemKeeping.withFinder),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ReportOptionCard(
+                key: const Key('report-keeping-atSecurityPost'),
+                icon: Icons.home_work_outlined,
+                label: 'Dititipkan ke pos',
+                selected: _keeping == ItemKeeping.atSecurityPost,
+                onTap: _isSubmitting
+                    ? null
+                    : () => _setKeeping(ItemKeeping.atSecurityPost),
+              ),
+            ),
+          ],
+        ),
+        if (_keeping == ItemKeeping.atSecurityPost)
+          TextFormField(
+            key: const Key('report-keeping-note'),
+            controller: _keepingNoteController,
+            enabled: !_isSubmitting,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: reportInputDecoration(
+              hint: 'Tempat penitipan, mis. Pos satpam Gedung F',
+              prefixIcon: const Icon(Icons.location_city_outlined),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _setKeeping(ItemKeeping value) {
+    setState(() {
+      _keeping = _keeping == value ? null : value;
+      _isDirty = true;
+    });
+  }
+
+  // ------------------------------------------------------- Kartu: umum
+
+  Widget _buildPhotoCard() {
+    return ReportSectionCard(
+      step: widget.isFound ? null : 3,
+      dark: widget.isFound,
+      title: widget.isFound ? 'Foto barang *' : 'Foto (opsional)',
+      trailing: Text(
+        '${_photos.length} / ${ReportRules.maxPhotos}',
+        style: TextStyle(
+          fontSize: 12,
+          color: widget.isFound ? ReportColors.onDeepMuted : ReportColors.muted,
+        ),
+      ),
+      children: [
+        ReportPhotoSection(
+          photos: _photos,
+          isFound: widget.isFound,
+          isBusy: _isPickingPhoto || _isSubmitting,
+          dark: widget.isFound,
+          statusText: _cameraPhotoStatus(),
+          onAdd: _addPhoto,
+          onAddFromGallery: _allowGalleryFallback
+              ? () => _addPhoto(fromGallery: true)
+              : null,
+          onRemove: _removePhoto,
+          onBlur: _blurPhoto,
+        ),
+      ],
+    );
+  }
+
+  /// Ringkasan validasi foto kamera terbaru (FR-R11) untuk ditampilkan.
+  String? _cameraPhotoStatus() {
+    if (!widget.isFound) return null;
+    ReportPhotoEntry? latest;
+    for (final photo in _photos) {
+      if (photo.isExisting || !photo.isFromCamera) continue;
+      if (latest == null || photo.takenAt!.isAfter(latest.takenAt!)) {
+        latest = photo;
+      }
+    }
+    if (latest == null) return null;
+    final minutes = DateTime.now().difference(latest.takenAt!).inMinutes;
+    final age = minutes < 1
+        ? 'Baru saja diambil'
+        : 'Diambil $minutes menit lalu';
+    final lat = _latitude;
+    final lng = _longitude;
+    final photoLat = latest.latitude;
+    final photoLng = latest.longitude;
+    if (lat == null || lng == null || photoLat == null || photoLng == null) {
+      return age;
+    }
+    final distance = ReportRules.haversineMeters(photoLat, photoLng, lat, lng);
+    return '$age · ${distance.round()} m dari titik laporan';
+  }
+
+  Widget _buildPrivateCard(bool locked) {
+    return ReportSectionCard(
+      dark: true,
+      icon: Icons.lock_outline,
+      title: widget.isFound ? 'Pertanyaan untuk pemilik' : 'Data privat',
+      subtitle: widget.isFound
+          ? 'Ciri yang hanya diketahui pemilik asli. Tidak tampil publik; '
+                'dipakai untuk menguji klaim.'
+          : 'Tidak tampil di laporan publik.',
+      children: [
+        ReportField(
+          dark: true,
+          label: 'Detail pembeda rahasia',
+          helper: 'Hanya Anda yang melihatnya saat memverifikasi klaim.',
+          child: TextFormField(
+            key: const Key('report-secret-detail'),
+            controller: _secretDetailController,
+            enabled: !_isSubmitting && !locked,
+            minLines: 2,
+            maxLines: 3,
+            maxLength: ReportRules.maxSecretDetailLength,
+            validator: Validators.reportSecretDetail,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: reportInputDecoration(
+              dark: true,
+              hint: widget.isFound
+                  ? 'mis. isi dompet, wallpaper HP'
+                  : 'mis. ada stiker kucing di bagian bawah',
+            ),
+          ),
+        ),
+        ReportField(
+          dark: true,
+          label: 'Nomor WhatsApp (opsional)',
+          helper:
+              'Dibagikan hanya setelah klaim disetujui dan kedua pihak '
+              'setuju bertukar kontak.',
+          child: TextFormField(
+            key: const Key('report-whatsapp'),
+            controller: _whatsappController,
+            enabled: !_isSubmitting,
+            keyboardType: TextInputType.phone,
+            validator: Validators.reportWhatsapp,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s\-]')),
+            ],
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: reportInputDecoration(dark: true, hint: '081234567890'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -------------------------------------------------------------- Field
+
+  Widget _nameField() {
+    return ReportField(
+      label: 'Nama barang',
+      required: true,
+      child: TextFormField(
         key: const Key('report-name'),
         controller: _nameController,
         enabled: !_isSubmitting,
@@ -965,436 +1182,403 @@ class _AddReportScreenState extends State<AddReportScreen> {
         validator: (value) =>
             Validators.reportName(value) ??
             ReportRules.validateSensitiveTitle(_category, value!),
-        decoration: _inputDecoration(
-          widget.isFound ? 'mis. Dompet kulit coklat' : 'mis. Tumbler hijau',
+        decoration: reportInputDecoration(
+          hint: widget.isFound
+              ? 'mis. Dompet kulit coklat'
+              : 'mis. Tumbler hijau',
         ),
       ),
-      const SizedBox(height: 8),
-      _fieldLabel('Kategori utama', required: true),
-      const SizedBox(height: 8),
-      _buildCategoryChips(locked),
-      if (_isSensitiveCategory) ...[
-        const SizedBox(height: 8),
-        _infoBanner(
-          'Kategori ini rawan data pribadi. Jangan tulis nama atau nomor '
-          'kartu pada judul, dan samarkan pada foto.',
-        ),
-      ],
-      const SizedBox(height: 16),
-      _fieldLabel('Kategori kedua (opsional)'),
-      const SizedBox(height: 8),
-      OutlinedButton(
-        key: const Key('report-category2'),
-        onPressed: _isSubmitting || locked ? null : _pickSecondCategory,
-        style: _pickerButtonStyle(),
-        child: Row(
+    );
+  }
+
+  Widget _categoryField(bool locked) {
+    return FormField<String>(
+      key: const Key('report-category'),
+      initialValue: _category,
+      validator: (_) => Validators.reportCategory(_category),
+      builder: (field) => ReportField(
+        label: 'Kategori',
+        required: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: Text(_category2 ?? 'Tidak ada')),
-            const Icon(Icons.arrow_drop_down),
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                key: const Key('report-category-list'),
+                scrollDirection: Axis.horizontal,
+                itemCount: ReportCategories.all.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final category = ReportCategories.all[index];
+                  return Center(
+                    child: ReportChoicePill(
+                      label: category.name,
+                      tooltip: category.examples,
+                      selected: _category == category.name,
+                      onSelected: _isSubmitting || locked
+                          ? null
+                          : (selected) {
+                              final value = selected ? category.name : null;
+                              field.didChange(value);
+                              setState(() {
+                                _category = value;
+                                if (_category2 == value) _category2 = null;
+                                _isDirty = true;
+                              });
+                            },
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (field.hasError) ...[
+              const SizedBox(height: 6),
+              Text(
+                field.errorText!,
+                style: const TextStyle(color: ReportColors.lost, fontSize: 12),
+              ),
+            ],
+            if (_isSensitiveCategory) ...[
+              const SizedBox(height: 10),
+              const ReportBanner(
+                icon: Icons.shield_outlined,
+                text:
+                    'Kategori ini rawan data pribadi. Jangan tulis nama atau '
+                    'nomor kartu, dan samarkan KTM/ATM di foto.',
+              ),
+            ],
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('report-category2'),
+                onPressed: _isSubmitting || locked ? null : _pickSecondCategory,
+                icon: const Icon(Icons.add_circle_outline, size: 18),
+                label: Text(
+                  _category2 == null
+                      ? 'Tambah kategori kedua (opsional)'
+                      : 'Kategori kedua: $_category2',
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: ReportColors.green,
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ),
           ],
         ),
       ),
-      const SizedBox(height: 16),
-      _fieldLabel('Deskripsi / ciri-ciri', required: true),
-      const SizedBox(height: 8),
-      TextFormField(
+    );
+  }
+
+  Widget _descriptionField() {
+    return ReportField(
+      label: 'Deskripsi umum',
+      required: true,
+      helper: 'Ciri khusus simpan di bagian rahasia agar tidak ditiru.',
+      child: TextFormField(
         key: const Key('report-description'),
         controller: _descriptionController,
         enabled: !_isSubmitting,
-        minLines: 3,
-        maxLines: 5,
+        minLines: 2,
+        maxLines: 4,
         maxLength: ReportRules.maxDescriptionLength,
         textCapitalization: TextCapitalization.sentences,
         validator: Validators.reportDescription,
-        decoration: _inputDecoration(
-          'Ciri umum yang boleh dilihat publik. Simpan ciri khusus di '
-          '"Detail pembeda rahasia".',
+        decoration: reportInputDecoration(
+          hint: 'Warna, ukuran, kondisi yang boleh dilihat publik',
         ),
       ),
-    ];
+    );
   }
 
-  List<Widget> _buildTimeSection() {
-    return [
-      _fieldLabel(
-        widget.isFound
-            ? 'Waktu ditemukan'
-            : _useTimeRange
-            ? 'Perkiraan waktu hilang (dari)'
-            : 'Waktu hilang',
-        required: true,
-      ),
-      const SizedBox(height: 8),
-      OutlinedButton.icon(
-        key: const Key('report-time-start'),
-        onPressed: _isSubmitting ? null : _selectStart,
-        icon: const Icon(Icons.calendar_month_outlined),
-        label: Text(Item.formatDateTime(_eventStart)),
-        style: _pickerButtonStyle(),
-      ),
-      if (!widget.isFound) ...[
-        SwitchListTile(
-          key: const Key('report-time-range'),
-          contentPadding: EdgeInsets.zero,
-          value: _useTimeRange,
-          onChanged: _isSubmitting
-              ? null
-              : (value) => setState(() {
-                  _useTimeRange = value;
-                  if (value && _eventEnd.isBefore(_eventStart)) {
-                    _eventEnd = _eventStart;
-                  }
-                  _isDirty = true;
-                }),
-          title: const Text(
-            'Saya tidak tahu waktu pastinya',
-            style: TextStyle(fontSize: 13),
-          ),
-          subtitle: const Text(
-            'Isi rentang waktu, mis. 10.00–13.00',
-            style: TextStyle(fontSize: 11),
+  Widget _colorBrandRow() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: ReportField(
+            label: 'Warna',
+            child: TextFormField(
+              key: const Key('report-color'),
+              controller: _colorController,
+              enabled: !_isSubmitting,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: reportInputDecoration(hint: 'mis. Hitam'),
+            ),
           ),
         ),
-        if (_useTimeRange) ...[
-          _fieldLabel('Sampai'),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            key: const Key('report-time-end'),
-            onPressed: _isSubmitting ? null : _selectEnd,
-            icon: const Icon(Icons.schedule),
-            label: Text(Item.formatDateTime(_eventEnd)),
-            style: _pickerButtonStyle(),
+        const SizedBox(width: 10),
+        Expanded(
+          child: ReportField(
+            label: 'Merek',
+            child: TextFormField(
+              key: const Key('report-brand'),
+              controller: _brandController,
+              enabled: !_isSubmitting,
+              textCapitalization: TextCapitalization.words,
+              decoration: reportInputDecoration(hint: 'mis. Eiger'),
+            ),
           ),
-        ],
+        ),
       ],
-    ];
+    );
   }
 
-  List<Widget> _buildLocationSection(bool locked) {
-    final hasPin = _latitude != null && _longitude != null;
-    return [
-      _fieldLabel(
-        widget.isFound ? 'Lokasi ditemukan' : 'Perkiraan lokasi hilang',
-        required: true,
+  Widget _timeRangeSwitch() {
+    return Container(
+      decoration: BoxDecoration(
+        color: ReportColors.background,
+        borderRadius: BorderRadius.circular(ReportRadius.field),
       ),
-      if (!widget.isFound) ...[
-        const SizedBox(height: 4),
-        const Text(
-          'Pilih tempat barang kemungkinan hilang, bukan lokasi Anda saat ini.',
-          style: TextStyle(color: _muted, fontSize: 12),
+      child: SwitchListTile(
+        key: const Key('report-time-range'),
+        value: _useTimeRange,
+        activeThumbColor: Colors.white,
+        activeTrackColor: ReportColors.green,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ReportRadius.field),
         ),
-      ],
-      const SizedBox(height: 8),
-      TextFormField(
-        key: const Key('report-location'),
-        controller: _locationController,
-        enabled: !_isSubmitting && !locked,
-        textCapitalization: TextCapitalization.sentences,
-        validator: Validators.reportLocation,
-        decoration: _inputDecoration('Nama gedung / area kampus').copyWith(
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                key: const Key('report-use-gps'),
-                tooltip: 'Gunakan lokasi saya (GPS)',
-                onPressed: _isSubmitting || _isLocating || locked
-                    ? null
-                    : _useCurrentLocation,
-                icon: _isLocating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.my_location, color: _green),
-              ),
-              IconButton(
-                key: const Key('report-pick-map'),
-                tooltip: 'Pilih di peta kampus',
-                onPressed: _isSubmitting || locked ? null : _openLocationPicker,
-                icon: const Icon(Icons.map_outlined, color: _green),
-              ),
-            ],
+        onChanged: _isSubmitting
+            ? null
+            : (value) => setState(() {
+                _useTimeRange = value;
+                if (value && _eventEnd.isBefore(_eventStart)) {
+                  _eventEnd = _eventStart;
+                }
+                _isDirty = true;
+              }),
+        title: const Text(
+          'Tidak tahu waktu pastinya',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text(
+          'Isi rentang waktu, mis. 10.00–13.00',
+          style: TextStyle(fontSize: 12, color: ReportColors.muted),
+        ),
+      ),
+    );
+  }
+
+  Widget _timeTiles() {
+    final range = !widget.isFound && _useTimeRange;
+    return ReportField(
+      label: widget.isFound ? 'Waktu ditemukan' : 'Waktu hilang',
+      required: true,
+      child: Row(
+        children: [
+          Expanded(
+            child: ReportDateTimeTile(
+              key: const Key('report-time-start'),
+              caption: range ? 'Dari' : 'Tanggal & jam',
+              value: Item.formatDateTime(_eventStart),
+              onTap: _isSubmitting ? null : _selectStart,
+            ),
           ),
-        ),
-      ),
-      const SizedBox(height: 8),
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final landmark in CampusLocations.landmarkNames.take(8))
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ActionChip(
-                  label: Text(landmark, style: const TextStyle(fontSize: 11)),
-                  onPressed: _isSubmitting || locked
-                      ? null
-                      : () => _selectLandmark(landmark),
-                ),
+          if (range) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: ReportDateTimeTile(
+                key: const Key('report-time-end'),
+                caption: 'Sampai',
+                value: Item.formatDateTime(_eventEnd),
+                onTap: _isSubmitting ? null : _selectEnd,
               ),
+            ),
           ],
-        ),
+        ],
       ),
-      if (hasPin) ...[
-        const SizedBox(height: 6),
-        Container(
-          key: const Key('report-pin-info'),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFFECFDF5),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.check_circle, size: 14, color: _green),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Titik di peta: ${_latitude!.toStringAsFixed(5)}, '
-                  '${_longitude!.toStringAsFixed(5)}',
-                  style: const TextStyle(fontSize: 11, color: _green),
-                ),
+    );
+  }
+
+  Widget _locationField(bool locked) {
+    final hasPin = _latitude != null && _longitude != null;
+    return ReportField(
+      label: widget.isFound ? 'Lokasi ditemukan' : 'Perkiraan lokasi hilang',
+      required: true,
+      helper: widget.isFound
+          ? null
+          : 'Pilih tempat barang kemungkinan hilang, bukan lokasi Anda '
+                'sekarang.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            key: const Key('report-location'),
+            controller: _locationController,
+            enabled: !_isSubmitting && !locked,
+            textCapitalization: TextCapitalization.sentences,
+            validator: Validators.reportLocation,
+            decoration: reportInputDecoration(
+              hint: 'Nama gedung / area kampus',
+              prefixIcon: Icon(
+                Icons.location_on_outlined,
+                color: ReportColors.typeColor(widget.isFound),
               ),
-              if (!locked)
-                InkWell(
-                  onTap: _isSubmitting ? null : _clearPin,
-                  child: const Text(
-                    'Hapus titik',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: _green,
-                      decoration: TextDecoration.underline,
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    key: const Key('report-use-gps'),
+                    tooltip: 'Gunakan lokasi saya (GPS)',
+                    onPressed: _isSubmitting || _isLocating || locked
+                        ? null
+                        : _useCurrentLocation,
+                    icon: _isLocating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.my_location,
+                            color: ReportColors.green,
+                          ),
+                  ),
+                  IconButton(
+                    key: const Key('report-pick-map'),
+                    tooltip: 'Pilih di peta kampus',
+                    onPressed: _isSubmitting || locked
+                        ? null
+                        : _openLocationPicker,
+                    icon: const Icon(
+                      Icons.map_outlined,
+                      color: ReportColors.green,
                     ),
                   ),
-                ),
-            ],
-          ),
-        ),
-      ],
-      if (!widget.isFound)
-        CheckboxListTile(
-          key: const Key('report-location-approx'),
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          value: _isLocationApproximate,
-          onChanged: _isSubmitting || locked
-              ? null
-              : (value) => setState(() {
-                  _isLocationApproximate = value ?? false;
-                  _isDirty = true;
-                }),
-          title: const Text(
-            'Saya tidak yakin lokasi pastinya',
-            style: TextStyle(fontSize: 13),
-          ),
-          subtitle: const Text(
-            'Laporan akan ditandai "lokasi perkiraan" agar penemu tidak '
-            'terpaku pada satu titik.',
-            style: TextStyle(fontSize: 11),
-          ),
-        ),
-    ];
-  }
-
-  List<Widget> _buildKeepingSection() {
-    return [
-      _fieldLabel('Keberadaan barang saat ini', required: true),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final keeping in ItemKeeping.values)
-            ChoiceChip(
-              key: Key('report-keeping-${keeping.name}'),
-              label: Text(keeping.label),
-              selected: _keeping == keeping,
-              showCheckmark: false,
-              onSelected: _isSubmitting
-                  ? null
-                  : (selected) => setState(() {
-                      _keeping = selected ? keeping : null;
-                      _isDirty = true;
-                    }),
-              labelStyle: TextStyle(
-                color: _keeping == keeping ? Colors.white : _ink,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-              backgroundColor: Colors.white,
-              selectedColor: _green,
-              side: BorderSide(color: _keeping == keeping ? _green : _outline),
-              shape: const StadiumBorder(),
-            ),
-        ],
-      ),
-      if (_keeping == ItemKeeping.atSecurityPost) ...[
-        const SizedBox(height: 10),
-        TextFormField(
-          key: const Key('report-keeping-note'),
-          controller: _keepingNoteController,
-          enabled: !_isSubmitting,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: _inputDecoration(
-            'Tempat penitipan, mis. Pos satpam Gedung F',
-          ),
-        ),
-      ],
-    ];
-  }
-
-  List<Widget> _buildAttributeSection() {
-    return [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _fieldLabel('Warna (opsional)'),
-                const SizedBox(height: 8),
-                TextFormField(
-                  key: const Key('report-color'),
-                  controller: _colorController,
-                  enabled: !_isSubmitting,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: _inputDecoration('mis. Hitam'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _fieldLabel('Merek (opsional)'),
-                const SizedBox(height: 8),
-                TextFormField(
-                  key: const Key('report-brand'),
-                  controller: _brandController,
-                  enabled: !_isSubmitting,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: _inputDecoration('mis. Eiger'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  List<Widget> _buildPrivateSection(bool locked) {
-    return [
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF6F8F9),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE0E9E8)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.lock_outline, size: 18, color: _green),
-                SizedBox(width: 6),
-                Text(
-                  'Data privat',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: _ink),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tidak tampil di laporan publik.',
-              style: TextStyle(color: _muted, fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            _fieldLabel('Detail pembeda rahasia'),
-            const SizedBox(height: 8),
-            TextFormField(
-              key: const Key('report-secret-detail'),
-              controller: _secretDetailController,
-              enabled: !_isSubmitting && !locked,
-              minLines: 2,
-              maxLines: 3,
-              maxLength: ReportRules.maxSecretDetailLength,
-              validator: Validators.reportSecretDetail,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: _inputDecoration(
-                widget.isFound
-                    ? 'Ciri yang hanya diketahui pemilik asli, mis. isi '
-                          'dompet, wallpaper HP'
-                    : 'Ciri yang bisa Anda sebutkan saat klaim, mis. stiker '
-                          'di bagian bawah',
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Hanya ditampilkan ke pemilik laporan saat memverifikasi klaim.',
-              style: TextStyle(color: _muted, fontSize: 11),
-            ),
-            const SizedBox(height: 12),
-            _fieldLabel('Nomor WhatsApp (opsional)'),
-            const SizedBox(height: 8),
-            TextFormField(
-              key: const Key('report-whatsapp'),
-              controller: _whatsappController,
-              enabled: !_isSubmitting,
-              keyboardType: TextInputType.phone,
-              validator: Validators.reportWhatsapp,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s\-]')),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 34,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final landmark in CampusLocations.landmarkNames.take(8))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: Text(landmark),
+                      labelStyle: const TextStyle(
+                        fontSize: 11,
+                        color: ReportColors.ink,
+                      ),
+                      backgroundColor: ReportColors.surface,
+                      side: const BorderSide(color: Color(0xFFD3E0DA)),
+                      shape: const StadiumBorder(),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _isSubmitting || locked
+                          ? null
+                          : () => _selectLandmark(landmark),
+                    ),
+                  ),
               ],
-              decoration: _inputDecoration('mis. 081234567890'),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Hanya dibagikan setelah klaim disetujui dan kedua pihak setuju '
-              'bertukar kontak.',
-              style: TextStyle(color: _muted, fontSize: 11),
+          ),
+          if (hasPin) ...[
+            const SizedBox(height: 8),
+            Container(
+              key: const Key('report-pin-info'),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: ReportColors.mint,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    size: 14,
+                    color: ReportColors.green,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Titik di peta: ${_latitude!.toStringAsFixed(5)}, '
+                      '${_longitude!.toStringAsFixed(5)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: ReportColors.green,
+                      ),
+                    ),
+                  ),
+                  if (!locked)
+                    TextButton(
+                      onPressed: _isSubmitting ? null : _clearPin,
+                      style: TextButton.styleFrom(
+                        foregroundColor: ReportColors.green,
+                        visualDensity: VisualDensity.compact,
+                        textStyle: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: const Text('Hapus titik'),
+                    ),
+                ],
+              ),
             ),
           ],
-        ),
+        ],
       ),
-    ];
+    );
   }
 
-  Widget _buildDraftBanner(ReportDraft draft) {
-    return Container(
-      key: const Key('report-draft-banner'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F3EE),
-        borderRadius: BorderRadius.circular(12),
+  Widget _approximateCheckbox(bool locked) {
+    return CheckboxListTile(
+      key: const Key('report-location-approx'),
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      activeColor: ReportColors.green,
+      value: _isLocationApproximate,
+      onChanged: _isSubmitting || locked
+          ? null
+          : (value) => setState(() {
+              _isLocationApproximate = value ?? false;
+              _isDirty = true;
+            }),
+      title: const Text(
+        'Saya tidak yakin lokasi pastinya',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      subtitle: const Text(
+        'Laporan ditandai "lokasi perkiraan".',
+        style: TextStyle(fontSize: 12, color: ReportColors.muted),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------ Banner & error
+
+  Widget _buildDraftBanner(ReportDraft draft) {
+    return ReportBanner(
+      key: const Key('report-draft-banner'),
+      tone: ReportBannerTone.success,
+      icon: Icons.description_outlined,
+      text: 'Ada draf tersimpan (${Item.formatDateTime(draft.savedAt)}).',
+      action: Wrap(
+        spacing: 8,
         children: [
-          Text(
-            'Ada draf tersimpan (${Item.formatDateTime(draft.savedAt)}).',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          FilledButton(
+            key: const Key('report-draft-use'),
+            onPressed: () => _applyDraft(draft),
+            style: FilledButton.styleFrom(
+              backgroundColor: ReportColors.green,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('Lanjutkan draf'),
           ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              FilledButton(
-                key: const Key('report-draft-use'),
-                onPressed: () => _applyDraft(draft),
-                child: const Text('Lanjutkan draf'),
-              ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: _discardDraft,
-                child: const Text('Buang'),
-              ),
-            ],
+          TextButton(
+            onPressed: _discardDraft,
+            style: TextButton.styleFrom(
+              foregroundColor: ReportColors.greenDeep,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('Buang'),
           ),
         ],
       ),
@@ -1402,257 +1586,24 @@ class _AddReportScreenState extends State<AddReportScreen> {
   }
 
   Widget _buildErrorBox() {
-    final color = Theme.of(context).colorScheme.error;
-    return Container(
+    return ReportBanner(
       key: const Key('report-error'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_errorMessage!, style: TextStyle(color: color)),
-          if (_canRetry) ...[
-            const SizedBox(height: 6),
-            OutlinedButton.icon(
+      tone: ReportBannerTone.danger,
+      icon: Icons.error_outline,
+      text: _errorMessage!,
+      action: _canRetry
+          ? OutlinedButton.icon(
               key: const Key('report-retry'),
               onPressed: _isSubmitting ? null : _submitReport,
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Coba kirim lagi'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubmitBar() {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Color(0xFFE0E9E8))),
-        ),
-        child: SizedBox(
-          height: 52,
-          child: FilledButton(
-            key: const Key('submit-report'),
-            onPressed: _isSubmitting ? null : _submitReport,
-            style: FilledButton.styleFrom(
-              backgroundColor: _green,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ReportColors.lost,
+                side: const BorderSide(color: ReportColors.lost),
+                visualDensity: VisualDensity.compact,
               ),
-            ),
-            child: _isSubmitting
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        _photos.isEmpty
-                            ? 'Mengirim laporan...'
-                            : 'Mengunggah ${_photos.length} foto...',
-                      ),
-                    ],
-                  )
-                : Text(
-                    _isEdit ? 'Simpan Perubahan' : 'Publikasikan',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryChips(bool locked) {
-    return FormField<String>(
-      key: const Key('report-category'),
-      initialValue: _category,
-      validator: (_) => Validators.reportCategory(_category),
-      builder: (field) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final category in ReportCategories.all)
-                Tooltip(
-                  message: category.examples,
-                  child: ChoiceChip(
-                    label: Text(category.name),
-                    selected: _category == category.name,
-                    showCheckmark: false,
-                    onSelected: _isSubmitting || locked
-                        ? null
-                        : (selected) {
-                            final value = selected ? category.name : null;
-                            field.didChange(value);
-                            setState(() {
-                              _category = value;
-                              if (_category2 == value) _category2 = null;
-                              _isDirty = true;
-                            });
-                          },
-                    labelStyle: TextStyle(
-                      color: _category == category.name ? Colors.white : _ink,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    backgroundColor: Colors.white,
-                    selectedColor: _green,
-                    side: BorderSide(
-                      color: _category == category.name ? _green : _outline,
-                    ),
-                    shape: const StadiumBorder(),
-                  ),
-                ),
-            ],
-          ),
-          if (field.hasError) ...[
-            const SizedBox(height: 6),
-            Text(
-              field.errorText!,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.error,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _infoBanner(String message) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF4DC),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, size: 18, color: Color(0xFF8A4B08)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF5C3A06)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Penanda jenis laporan (tidak dapat diubah setelah dipilih, termasuk
-  /// saat edit, agar laporan Lost tidak berubah menjadi Found).
-  Widget _buildReportTypeSelector() {
-    final color = widget.isFound ? _green : const Color(0xFFC20E18);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            widget.isFound ? Icons.check_circle_outline : Icons.search,
-            color: color,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              widget.isFound
-                  ? 'Laporan BARANG DITEMUKAN — foto wajib dari kamera.'
-                  : 'Laporan BARANG HILANG — foto opsional dari galeri.',
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _fieldLabel(String label, {bool required = false}) {
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(
-          color: _ink,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-        children: [
-          TextSpan(text: label),
-          if (required)
-            const TextSpan(
-              text: ' *',
-              style: TextStyle(color: Color(0xFFB3261E)),
-            ),
-        ],
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String? hint) {
-    return InputDecoration(
-      hintText: hint,
-      hintMaxLines: 2,
-      hintStyle: const TextStyle(fontSize: 13, color: _muted),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _outline),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _outline),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: _green, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: Theme.of(context).colorScheme.error),
-      ),
-    );
-  }
-
-  ButtonStyle _pickerButtonStyle() {
-    return OutlinedButton.styleFrom(
-      foregroundColor: _ink,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      side: const BorderSide(color: _outline),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            )
+          : null,
     );
   }
 }
