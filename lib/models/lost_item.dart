@@ -8,6 +8,8 @@ class LostItem {
   final String tanggalHilang;
   final String pelapor;
   final String iconCategory;
+  final double? latitude;
+  final double? longitude;
 
   const LostItem({
     required this.id,
@@ -19,5 +21,7 @@ class LostItem {
     required this.tanggalHilang,
     required this.pelapor,
     required this.iconCategory,
+    this.latitude,
+    this.longitude,
   });
 }

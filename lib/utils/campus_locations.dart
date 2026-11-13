@@ -1,4 +1,4 @@
-﻿import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart';
 
 /// Utilitas koordinat area kampus Universitas Andalas (Limau Manis, Padang).
 /// Digunakan untuk Modul 2: Location & Discovery (FR-L01, FR-L02, FR-L05).
@@ -169,4 +169,3 @@ class CampusLocations {
     );
   }
 }
-

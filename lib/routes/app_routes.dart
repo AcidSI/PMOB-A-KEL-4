@@ -107,6 +107,16 @@ class AppRoutes {
           settings: settings,
         );
       case locationPicker:
+        final arguments = settings.arguments;
+        if (arguments is Map<String, dynamic>) {
+          return MaterialPageRoute<CampusLocationResult>(
+            builder: (_) => CampusLocationPickerScreen(
+              initialCenter: arguments['initialCenter'],
+              initialLocationName: arguments['initialLocationName'],
+            ),
+            settings: settings,
+          );
+        }
         return MaterialPageRoute<CampusLocationResult>(
           builder: (_) => const CampusLocationPickerScreen(),
           settings: settings,
