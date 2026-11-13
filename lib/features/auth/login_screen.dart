@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../routes/app_routes.dart';
-import '../utils/validators.dart';
+import 'package:find_it/core/routes/app_routes.dart';
+import 'package:find_it/core/utils/validators.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,7 +31,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       body: SafeArea(
@@ -52,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Sivitas Akademik Universitas Andalas',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: scheme.primary,
+                      color: Color.fromARGB(255, 0, 0, 0),
                       fontSize: 12,
                       height: 1.3,
                     ),
@@ -80,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Text(
                             'Email',
                             style: TextStyle(
-                              color: scheme.primary,
+                              color: Color.fromARGB(255, 0, 0, 0),
                               fontSize: 14,
                             ),
                           ),
@@ -107,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Text(
                             'Kata Sandi',
                             style: TextStyle(
-                              color: scheme.primary,
+                              color: Color.fromARGB(255, 0, 0, 0),
                               fontSize: 14,
                             ),
                           ),

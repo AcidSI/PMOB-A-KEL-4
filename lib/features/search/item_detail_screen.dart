@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/lost_item.dart';
+
+import 'package:find_it/features/report/models/lost_item.dart';
 
 class ItemDetailScreen extends StatelessWidget {
   final LostItem item;
@@ -46,7 +47,7 @@ class ItemDetailScreen extends StatelessWidget {
   Color _getCategoryColor(String category) {
     switch (category) {
       case 'laptop':
-        return const Color(0xFF045436);
+        return const Color(0xFF0A5934);
       case 'phone':
         return const Color(0xFF00897B);
       case 'wallet':
@@ -76,7 +77,7 @@ class ItemDetailScreen extends StatelessWidget {
       case 'watch':
         return const Color(0xFF880E4F);
       default:
-        return const Color(0xFF045436);
+        return const Color(0xFF0A5934);
     }
   }
 
@@ -93,7 +94,10 @@ class ItemDetailScreen extends StatelessWidget {
             pinned: true,
             backgroundColor: color,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+              icon: const Icon(
+                Icons.arrow_back_ios_rounded,
+                color: Colors.white,
+              ),
               onPressed: () => Navigator.pop(context),
             ),
             flexibleSpace: FlexibleSpaceBar(
@@ -343,7 +347,7 @@ class ItemDetailScreen extends StatelessWidget {
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
-                    color: const Color(0xFF045436),
+                    color: const Color(0xFF0A5934),
                   ),
                 ),
               ],

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/item.dart';
+import 'package:find_it/features/report/models/report.dart';
 
 class ChatScreen extends StatelessWidget {
   final Item item;

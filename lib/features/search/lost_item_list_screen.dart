@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../data/item_repository.dart';
-import '../models/item.dart';
-import '../models/lost_item.dart';
-import '../data/lost_item_database.dart';
-import 'item_detail_screen.dart';
+import 'package:find_it/features/report/data/item_repository.dart';
+import 'package:find_it/features/report/data/lost_item_database.dart';
+import 'package:find_it/features/report/models/lost_item.dart';
+import 'package:find_it/features/report/models/report.dart';
+import 'package:find_it/features/search/item_detail_screen.dart';
 
 class LostItemListScreen extends StatefulWidget {
   const LostItemListScreen({super.key});
@@ -36,7 +36,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
   @override
   void initState() {
     super.initState();
-    _items = ItemRepository().items
+    _items = ItemRepository().visibleItems
         .where((item) => !item.isFound)
         .map(_toLostItem)
         .toList();
@@ -175,7 +175,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
       pinned: true,
       // stretch dinonaktifkan agar gambar no-result tidak terzoom saat pull-down
       stretch: false,
-      backgroundColor: const Color(0xFF045436),
+      backgroundColor: const Color(0xFF0A5934),
       // Judul collapsed (hanya muncul saat AppBar menyusut penuh)
       title: Text(
         'Find!t',
@@ -193,7 +193,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
         background: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF045436), Color(0xFF0B6670)],
+              colors: [Color(0xFF0A5934), Color(0xFF0B6670)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -295,7 +295,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
                         colors: [Color(0xFF0B6670), Color(0xFF73C47A)],
                       )
                     : const LinearGradient(
-                        colors: [Color(0xFF045436), Color(0xFF0B6670)],
+                        colors: [Color(0xFF0A5934), Color(0xFF0B6670)],
                       ),
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
@@ -377,7 +377,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.w700,
               fontSize: 15,
-              color: const Color(0xFF045436),
+              color: const Color(0xFF0A5934),
             ),
           ),
           const SizedBox(height: 4),
@@ -454,7 +454,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
                 child: Container(
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF045436), Color(0xFF0B6670)],
+                      colors: [Color(0xFF0A5934), Color(0xFF0B6670)],
                     ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
@@ -526,7 +526,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
           style: GoogleFonts.poppins(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: const Color(0xFF045436),
+            color: const Color(0xFF0A5934),
           ),
         ),
         const SizedBox(height: 4),
@@ -615,7 +615,7 @@ class _LostItemListScreenState extends State<LostItemListScreen>
                 fontWeight: FontWeight.w600,
                 color: _searchResults.isEmpty
                     ? Colors.orange[800]
-                    : const Color(0xFF045436),
+                    : const Color(0xFF0A5934),
               ),
             ),
           ),
@@ -816,7 +816,7 @@ class _ItemCardState extends State<_ItemCard> {
                         style: GoogleFonts.poppins(
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
-                          color: const Color(0xFF045436),
+                          color: const Color(0xFF0A5934),
                         ),
                       ),
                       const SizedBox(height: 4),

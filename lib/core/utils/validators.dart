@@ -1,3 +1,5 @@
+import 'package:find_it/features/report/domain/report_rules.dart';
+
 class Validators {
   Validators._(); // Private constructor to prevent instantiation 
 
@@ -34,7 +36,7 @@ class Validators {
   if (!isNip) {
     // Jika bukan NIP, langsung periksa apakah diakhiri dengan domain kampus
     if (!input.endsWith('@student.unand.ac.id')) {
-      return 'Masukkan NIP atau email @student.unand.ac.id yang valid';
+      return 'Masukkan NIP atau email student yang valid';
     }
   }
   return null;
@@ -82,7 +84,11 @@ class Validators {
   static String? reportDescription(String? value) {
     final requiredError = requiredField(value, fieldName: 'Deskripsi');
     if (requiredError != null) return requiredError;
-    return maxLength(value, 50, fieldName: 'Deskripsi');
+    return maxLength(
+      value,
+      ReportRules.maxDescriptionLength,
+      fieldName: 'Deskripsi',
+    );
   }
 
   static String? reportLocation(String? value) =>

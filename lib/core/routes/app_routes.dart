@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../models/item.dart';
-// import '../screens/catatan_form_screen.dart';
-import '../screens/chat_screen.dart';
-import '../screens/detail_screen.dart';
-import '../screens/home_screen.dart';
-import '../screens/login_screen.dart';
-import '../screens/not_found_screen.dart';
-import '../screens/add_report_screen.dart';
-import '../screens/lost_item_list_screen.dart';
+import 'package:find_it/core/screens/not_found_screen.dart';
+import 'package:find_it/features/auth/login_screen.dart';
+import 'package:find_it/features/home/home_screen.dart';
+import 'package:find_it/features/report/models/report.dart';
+import 'package:find_it/features/report/screens/add_report_screen.dart';
+import 'package:find_it/features/report/screens/chat_screen.dart';
+import 'package:find_it/features/report/screens/detail_screen.dart';
+import 'package:find_it/features/search/lost_item_list_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -19,6 +18,7 @@ class AppRoutes {
   static const String detail = '/detail';
   //static const String noteForm = '/catatan-form';
   static const String addReport = '/laporan/tambah';
+  static const String editReport = '/laporan/ubah';
   static const String chat = '/chat';
   static const String advancedSearch = '/pencarian-lanjutan';
 
@@ -63,6 +63,22 @@ class AppRoutes {
         if (arguments is bool) { // Memeriksa apakah argumen yang diteruskan adalah boolean
           return MaterialPageRoute<Item>( 
             builder: (_) => AddReportScreen(isFound: arguments),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => NotFoundScreen(routeName: settings.name),
+          settings: settings,
+        );
+      case editReport:
+        final arguments = settings.arguments;
+        if (arguments is Item) {
+          // Mode edit: argumen berupa laporan yang akan diubah (FR-R04).
+          return MaterialPageRoute<Item>(
+            builder: (_) => AddReportScreen(
+              isFound: arguments.isFound,
+              editItem: arguments,
+            ),
             settings: settings,
           );
         }

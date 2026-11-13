@@ -1,4 +1,4 @@
-import '../models/lost_item.dart';
+import 'package:find_it/features/report/models/lost_item.dart';
 
 class LostItemDatabase {
   static const List<LostItem> items = [
