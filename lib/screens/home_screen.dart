@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import 'package:find_it/core/routes/app_routes.dart';
-import 'package:find_it/core/widgets/item_visuals.dart';
-import 'package:find_it/core/widgets/state_views.dart';
-import 'package:find_it/core/widgets/status_pill.dart';
-import 'package:find_it/features/report/data/item_repository.dart';
-import 'package:find_it/features/report/models/report.dart';
+import '../data/app_data.dart';
+import '../data/item_repository.dart';
+import '../models/item.dart';
+import '../routes/app_routes.dart';
+import '../services/app_session.dart';
+import '../services/matching_service.dart';
+import '../widgets/item_visuals.dart';
+import '../widgets/state_views.dart';
 
 enum ViewStatus { loading, success, error }
 
@@ -19,6 +23,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final ItemRepository _repository;
+  late final MatchingService _matchingService;
+  Timer? _matchingTimer;
   final _searchController = TextEditingController();
   final _reportsSectionKey = GlobalKey();
   ViewStatus _status = ViewStatus.loading;
@@ -31,12 +37,19 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = widget.repository ?? ItemRepository();
+    _repository = widget.repository ?? AppData.repository;
+    _matchingService = identical(_repository, AppData.repository)
+        ? AppData.matchingService
+        : MatchingService(items: _repository.items);
+    _matchingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _matchingService.refreshMatches();
+    });
     _loadItems();
   }
 
   @override
   void dispose() {
+    _matchingTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -44,13 +57,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadItems() async {
     setState(() => _status = ViewStatus.loading);
     try {
-      final items = await _repository.fetchItems(simulateError: _simulateError);
+      final items = await _repository.fetchItems(
+        simulateError: _simulateError,
+        viewerId: AppSession.userId,
+      );
       if (!mounted) return;
+      _matchingService.refreshMatches();
       setState(() {
         _items = [...items];
         _status = ViewStatus.success;
         _errorMessage = '';
       });
+      _checkReportReminders();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -127,9 +145,9 @@ class _HomeScreenState extends State<HomeScreen> {
       arguments: isFound,
     );
     if (!mounted || item == null) return;
+    // Form Modul 1 sudah menyimpan laporan ke repository & memicu matching.
     setState(() {
-      _repository.add(item);
-      _items = _repository.visibleItems;
+      _items = _repository.visibleItemsFor(AppSession.userId);
       _selectedFilter = 'Semua';
       _searchController.clear();
     });
@@ -144,20 +162,85 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Laporan baru ditambahkan ke daftar.')),
+      const SnackBar(content: Text('Laporan berhasil dipublikasikan.')),
     );
   }
 
   Future<void> _openItem(Item item) async {
-    // Detail dapat mengubah, memperpanjang, atau menghapus (soft delete)
-    // laporan lewat repository, jadi daftar dimuat ulang setelah kembali.
+    // Detail dapat mengubah, menutup, memperpanjang, atau menghapus (soft
+    // delete) laporan lewat repository, jadi daftar dimuat ulang setelah
+    // kembali. Data tidak dihapus permanen agar riwayat klaim Modul 3 aman.
     await Navigator.pushNamed<String>(
       context,
       AppRoutes.detail,
       arguments: item,
     );
     if (!mounted) return;
-    setState(() => _items = _repository.visibleItems);
+    setState(() => _items = _repository.visibleItemsFor(AppSession.userId));
+  }
+
+  /// FR-R06/FR-R10: pengingat laporan milik pengguna yang hampir/sudah
+  /// kedaluwarsa, sekali per laporan.
+  void _checkReportReminders() {
+    final fresh = AppData.reportNotifications.checkExpiry(
+      _repository.ownedBy(AppSession.userId),
+      AppSession.userId,
+    );
+    if (fresh.isEmpty || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          fresh.length == 1
+              ? fresh.first.body
+              : '${fresh.length} laporan Anda perlu diperhatikan.',
+        ),
+        action: SnackBarAction(label: 'Lihat', onPressed: _openMyReports),
+      ),
+    );
+  }
+
+  Future<void> _openMyReports() async {
+    await Navigator.pushNamed<void>(context, AppRoutes.myReports);
+    if (!mounted) return;
+    setState(() => _items = _repository.visibleItemsFor(AppSession.userId));
+  }
+
+  Future<void> _openAccountSheet() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('account-my-reports'),
+              leading: const Icon(Icons.assignment_outlined),
+              title: const Text('Laporan Saya'),
+              subtitle: const Text('Kelola, perpanjang, atau tutup laporan'),
+              onTap: () => Navigator.pop(sheetContext, 'reports'),
+            ),
+            ListTile(
+              key: const Key('account-logout'),
+              leading: const Icon(Icons.logout),
+              title: const Text('Keluar'),
+              onTap: () => Navigator.pop(sheetContext, 'logout'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'reports':
+        await _openMyReports();
+      case 'logout':
+        AppSession.signOut();
+        Navigator.pushNamedAndRemoveUntil<void>(
+          context,
+          AppRoutes.login,
+          (route) => false,
+        );
+    }
   }
 
   @override
@@ -184,158 +267,107 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader() {
-    return SizedBox(
-      height: 236,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            bottom: 20,
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                color: Color(0xFF0A5934),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(36),
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
+      ),
+      child: SizedBox(
+        height: 190,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              bottom: 20,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0A5934),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(36),
+                  ),
                 ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 29,
-                          backgroundColor: Colors.white,
-                          child: const Text(
-                            'F',
-                            style: TextStyle(
-                              color: Color(0xFF0A5934),
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Selamat Datang',
+                        style: TextStyle(color: scheme.secondary, fontSize: 12),
+                      ),
+                      const Text(
+                        'Mari Temukan Barangmu!',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Selamat datang',
-                                style: TextStyle(
-                                  color: Color(0xFFD8F1EE),
-                                  fontSize: 14,
-                                ),
-                              ),
-                              Text(
-                                'Temukan barangmu',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        CircleAvatar(
-                          radius: 29,
-                          backgroundColor: Colors.white.withValues(alpha: 0.16),
-                          child: const Icon(
-                            Icons.notifications_none_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          color: Color(0xFFD8F1EE),
-                          size: 22,
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Universitas Andalas · Kampus Limau Manis',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Color(0xFFE7F5F3),
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: 0,
-            child: Material(
-              color: Colors.white,
-              elevation: 7,
-              shadowColor: const Color(0x22102020),
-              borderRadius: BorderRadius.circular(24),
-              child: SizedBox(
-                height: 68,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 16),
-                    const Icon(
-                      Icons.search_rounded,
-                      color: Color(0xFF52676B),
-                      size: 28,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (_) => setState(() {}),
-                        textInputAction: TextInputAction.search,
-                        decoration: const InputDecoration(
-                          hintText: 'Cari dompet, kunci, botol...',
-                          border: InputBorder.none,
-                          isDense: true,
-                        ),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 0,
+              child: Material(
+                color: Colors.white,
+                elevation: 7,
+                shadowColor: const Color(0x22102020),
+                borderRadius: BorderRadius.circular(24),
+                child: SizedBox(
+                  height: 68,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 16),
+                      const Icon(
+                        Icons.search_rounded,
+                        color: Color(0xFF52676B),
+                        size: 28,
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: IconButton.filledTonal(
-                        tooltip: 'Pencarian berbobot',
-                        onPressed: () => Navigator.pushNamed<void>(
-                          context,
-                          AppRoutes.advancedSearch,
-                        ),
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFFDDF2EF),
-                          foregroundColor: const Color(0xFF0A5934),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (_) => setState(() {}),
+                          textInputAction: TextInputAction.search,
+                          decoration: const InputDecoration(
+                            hintText: 'Cari dompet, kunci, botol...',
+                            border: InputBorder.none,
+                            isDense: true,
                           ),
                         ),
-                        icon: const Icon(Icons.tune_rounded),
                       ),
-                    ),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: IconButton.filledTonal(
+                          tooltip: 'Pencarian berbobot',
+                          onPressed: () => Navigator.pushNamed<void>(
+                            context,
+                            AppRoutes.advancedSearch,
+                          ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFFDDF2EF),
+                            foregroundColor: const Color(0xFF0A5934),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          icon: const Icon(Icons.tune_rounded),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -351,61 +383,68 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- Daftar laporan barang ---
   Widget _buildReportList() {
     final items = _visibleItems;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 112),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(22, 36, 22, 100),
+      children: [
+        Align(alignment: Alignment.centerLeft, child: _buildReportCallout()),
+        const SizedBox(height: 24),
+        _buildFilters(),
+        const SizedBox(height: 24),
+        KeyedSubtree(
+          key: _reportsSectionKey,
+          child: const Text(
+            'LAPORAN TERBARU',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (items.isEmpty)
+          const SizedBox(
+            height: 180,
+            child: EmptyView(message: 'Tidak ada laporan yang cocok.'),
+          )
+        else
+          ...items.map(_buildItemCard),
+      ],
+    );
+  }
+
+  // --- Kartu CTA laporan barang ---
+  Widget _buildReportCallout() {
+    return Material(
+      color: const Color(0xFFFEDADA),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        key: const Key('home-create-report'),
+        onTap: () => _createReport(false),
+        borderRadius: BorderRadius.circular(20),
+        child: const SizedBox(
+          width: 165,
+          height: 132,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Saya kehilangan',
-                  subtitle: 'Laporkan barang hilang',
-                  icon: Icons.search_rounded,
-                  background: const Color(0xFFF8A10A),
-                  foreground: const Color(0xFF14282C),
-                  onTap: () => _createReport(false),
+              Icon(Icons.search, color: Color(0xFFC20E18), size: 56),
+              SizedBox(height: 2),
+              Text(
+                'Laporkan',
+                style: TextStyle(
+                  color: Color(0xFFC20E18),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Saya menemukan',
-                  subtitle: 'Laporkan barang temuan',
-                  icon: Icons.camera_alt_outlined,
-                  background: const Color(0xFF0A5934),
-                  foreground: Colors.white,
-                  onTap: _openAddReport,
+              Text(
+                'Barang Hilang',
+                style: TextStyle(
+                  color: Color(0xFFC20E18),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          _buildDiscoveryCard(),
-          const SizedBox(height: 24),
-          _buildSectionHeading('Kategori', action: 'Lihat semua'),
-          const SizedBox(height: 12),
-          _buildCategories(),
-          const SizedBox(height: 24),
-          KeyedSubtree(
-            key: _reportsSectionKey,
-            child: _buildSectionHeading(
-              'LAPORAN TERBARU',
-              action: 'Lihat semua',
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildFilters(),
-          const SizedBox(height: 10),
-          if (items.isEmpty)
-            const SizedBox(
-              height: 180,
-              child: EmptyView(message: 'Tidak ada laporan yang cocok.'),
-            )
-          else
-            ...items.map(_buildItemCard),
-        ],
+        ),
       ),
     );
   }
@@ -465,153 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildDiscoveryCard() {
-    return Material(
-      color: const Color(0xFFDDF2EF),
-      borderRadius: BorderRadius.circular(24),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 36,
-              backgroundColor: const Color(0xFF0A5934),
-              child: Text(
-                '${_items.length}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Laporan di kampus',
-                    style: TextStyle(
-                      color: Color(0xFF0D5F59),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Temukan barang lebih cepat',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Color(0xFF14282C),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    '${_items.length} laporan tersedia',
-                    style: const TextStyle(
-                      color: Color(0xFF63777B),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.pushNamed<void>(context, AppRoutes.advancedSearch),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF0A5934),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              child: const Text('Cari'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeading(String title, {String? action}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xFF14282C),
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        if (action != null)
-          Text(
-            action,
-            style: const TextStyle(
-              color: Color(0xFF0A5934),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildCategories() {
-    const categories = [
-      (Icons.account_balance_wallet_outlined, 'Dompet'),
-      (Icons.backpack_outlined, 'Tas'),
-      (Icons.devices_other_outlined, 'Elektronik'),
-      (Icons.key_outlined, 'Kunci'),
-      (Icons.description_outlined, 'Dokumen'),
-    ];
-    return Row(
-      children: [
-        for (var index = 0; index < categories.length; index++)
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: index == 0 ? 0 : 4,
-                right: index == categories.length - 1 ? 0 : 4,
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDDF2EF),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Icon(
-                      categories[index].$1,
-                      color: const Color(0xFF0A5934),
-                      size: 27,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    categories[index].$2,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF263B3F),
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
+  // --- Filter laporan barang ---
   Widget _buildFilters() {
     const filters = ['Semua', 'Kehilangan', 'Ditemukan'];
     return Row(
@@ -649,12 +542,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- Ringkasan informasi ---
   Widget _buildItemCard(Item item) {
-    final statusColor = item.isFound
-        ? const Color(0xFFDDF2EF)
-        : const Color(0xFFFFE9C8);
-    final statusForeground = item.isFound
-        ? const Color(0xFF0D5F59)
-        : const Color(0xFF8A4B08);
+    final reportType = item.isFound ? 'Ditemukan' : 'Kehilangan';
+    final statusLabel = switch (item.status) {
+      ReportStatus.active => 'Aktif',
+      ReportStatus.inVerification => 'Dalam Verifikasi',
+      ReportStatus.resolved => 'Selesai',
+      ReportStatus.expired => 'Kedaluwarsa',
+      ReportStatus.removed => 'Disembunyikan',
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Material(
@@ -669,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                ItemArtwork(item: item, size: 94),
+                LegacyItemArtwork(item: item, size: 94),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -677,29 +572,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Text(
-                              item.isFound ? 'Ditemukan' : 'Hilang',
-                              style: TextStyle(
-                                color: statusForeground,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                          StatusPill(
+                            label: reportType,
+                            color: item.isFound
+                                ? const Color(0xFF045436)
+                                : const Color(0xFFEF4444),
+                            borderRadius: BorderRadius.circular(18),
                           ),
                           if (item.status != ReportStatus.active) ...[
                             const SizedBox(width: 6),
                             StatusPill(
-                              label: item.status.label,
-                              color: reportStatusColor(item.status),
+                              label: statusLabel,
+                              color: legacyReportStatusColor(item.status),
                             ),
                           ],
                           const Spacer(),
@@ -774,6 +658,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- Bar navigasi bawah ---
   Widget _buildBottomBar() {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -781,18 +666,37 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 68,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(Icons.home_outlined, 'Beranda', selected: true),
-              _buildNavItem(Icons.map_outlined, 'Peta'),
-              const SizedBox(width: 56),
-              _buildNavItem(Icons.notifications_none, 'Notifikasi'),
-              _buildNavItem(Icons.person_outline, 'Profil'),
-            ],
-          ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            IconButton(
+              tooltip: 'Beranda',
+              onPressed: () {},
+              icon: Icon(Icons.home, color: scheme.primary, size: 29),
+            ),
+            IconButton(
+              tooltip: 'Peta Kampus',
+              onPressed: () =>
+                  Navigator.pushNamed<void>(context, AppRoutes.mapDiscovery),
+              icon: Icon(Icons.map_outlined, color: scheme.primary, size: 27),
+            ),
+            const SizedBox(width: 42),
+            IconButton(
+              tooltip: 'Matching, klaim & notifikasi',
+              onPressed: () => Navigator.pushNamed<void>(
+                context,
+                AppRoutes.matches,
+                arguments: _matchingService,
+              ),
+              icon: Icon(Icons.notifications_none, color: scheme.primary),
+            ),
+            IconButton(
+              key: const Key('home-account'),
+              tooltip: 'Akun & Laporan Saya',
+              onPressed: _openAccountSheet,
+              icon: Icon(Icons.account_circle_outlined, color: scheme.primary),
+            ),
+          ],
         ),
       ),
     );

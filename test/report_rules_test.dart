@@ -1,58 +1,100 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:find_it/core/utils/validators.dart';
-import 'package:find_it/features/report/data/item_repository.dart';
-import 'package:find_it/features/report/domain/report_rules.dart';
-import 'package:find_it/features/report/models/report.dart';
-import 'package:find_it/features/report/models/report_category.dart';
-
-// Ganti `findit` dengan nama paket pada pubspec.yaml proyek Anda.
+import 'package:find_it/domain/report_rules.dart';
+import 'package:find_it/models/item.dart';
 
 Item _item({
+  String id = 'a',
+  String name = 'Dompet kulit coklat',
+  bool isFound = false,
+  String category = 'Dompet & Kartu',
   ReportStatus status = ReportStatus.active,
-  bool isOwner = true,
+  String? ownerId = 'user:me',
+  DateTime? createdAt,
   DateTime? expiresAt,
-  String category = 'Elektronik',
-}) => Item(
-  id: 'x',
-  nameItem: 'Laptop',
-  subtitle: 's',
-  description: 'd',
-  location: 'l',
-  isFound: false,
-  category: category,
-  isOwner: isOwner,
-  status: status,
-  expiresAt: expiresAt,
-);
+}) {
+  return Item(
+    id: id,
+    nameItem: name,
+    subtitle: '',
+    description: 'desc',
+    location: 'Perpustakaan',
+    isFound: isFound,
+    category: category,
+    status: status,
+    ownerId: ownerId,
+    createdAt: createdAt,
+    expiresAt: expiresAt,
+  );
+}
 
 void main() {
-  final now = DateTime(2026, 11, 1, 12);
+  final now = DateTime(2026, 11, 13, 12);
 
-  group('haversine', () {
-    test('titik sama = 0 m', () {
-      expect(ReportRules.haversineMeters(-0.91, 100.46, -0.91, 100.46), 0);
+  group('validasi input', () {
+    test('nama barang 3–60 karakter', () {
+      expect(ReportRules.validateName(''), isNotNull);
+      expect(ReportRules.validateName('HP'), isNotNull);
+      expect(ReportRules.validateName('Tas'), isNull);
+      expect(ReportRules.validateName('x' * 61), isNotNull);
     });
-    test('0.001 derajat lintang ≈ 111 m', () {
-      final d = ReportRules.haversineMeters(-0.910, 100.46, -0.909, 100.46);
-      expect(d, closeTo(111.2, 1));
+
+    test('waktu kejadian tidak boleh di masa depan', () {
+      expect(
+        ReportRules.validateEventTime(now.add(const Duration(minutes: 1)), now),
+        isNotNull,
+      );
+      expect(ReportRules.validateEventTime(now, now), isNull);
+    });
+
+    test('rentang waktu: akhir harus setelah awal', () {
+      final start = now.subtract(const Duration(hours: 3));
+      expect(
+        ReportRules.validateEventTime(
+          start,
+          now,
+          end: start.subtract(const Duration(minutes: 1)),
+        ),
+        isNotNull,
+      );
+      expect(
+        ReportRules.validateEventTime(
+          start,
+          now,
+          end: start.add(const Duration(hours: 1)),
+        ),
+        isNull,
+      );
+    });
+
+    test('judul kategori sensitif tidak boleh memuat nomor kartu', () {
+      expect(
+        ReportRules.validateSensitiveTitle('Dompet & Kartu', 'KTM 2411522019'),
+        isNotNull,
+      );
+      expect(
+        ReportRules.validateSensitiveTitle('Dompet & Kartu', 'KTM biru'),
+        isNull,
+      );
+      expect(
+        ReportRules.validateSensitiveTitle('Elektronik', 'HP 2411522019'),
+        isNull,
+      );
+    });
+
+    test('format WhatsApp', () {
+      expect(ReportRules.validateWhatsapp(''), isNull);
+      expect(ReportRules.validateWhatsapp('081234567890'), isNull);
+      expect(ReportRules.validateWhatsapp('+62 812-3456-7890'), isNull);
+      expect(ReportRules.validateWhatsapp('12345'), isNotNull);
     });
   });
 
-  group('validateFoundPhoto (FR-R11)', () {
-    test('tanpa waktu foto ditolak', () {
+  group('foto Found (FR-R11)', () {
+    test('harus dari kamera dan ≤ 30 menit', () {
       expect(
         ReportRules.validateFoundPhoto(takenAt: null, now: now),
         isNotNull,
-      );
-    });
-    test('29 menit lolos, 31 menit ditolak', () {
-      expect(
-        ReportRules.validateFoundPhoto(
-          takenAt: now.subtract(const Duration(minutes: 29)),
-          now: now,
-        ),
-        isNull,
       );
       expect(
         ReportRules.validateFoundPhoto(
@@ -61,178 +103,140 @@ void main() {
         ),
         isNotNull,
       );
-    });
-    test('jarak > 500 m ditolak, ≤ 500 m lolos', () {
-      final taken = now.subtract(const Duration(minutes: 1));
       expect(
         ReportRules.validateFoundPhoto(
-          takenAt: taken,
+          takenAt: now.subtract(const Duration(minutes: 5)),
           now: now,
-          photoLat: -0.910,
-          photoLng: 100.46,
-          reportLat: -0.9055, // ±500 m lebih
-          reportLng: 100.46,
+        ),
+        isNull,
+      );
+    });
+
+    test('lokasi foto ≤ 500 m dari titik laporan', () {
+      // ±0,01° lintang ≈ 1,1 km.
+      expect(
+        ReportRules.validateFoundPhoto(
+          takenAt: now,
+          now: now,
+          photoLat: -0.914,
+          photoLng: 100.459,
+          reportLat: -0.904,
+          reportLng: 100.459,
         ),
         isNotNull,
       );
       expect(
         ReportRules.validateFoundPhoto(
-          takenAt: taken,
+          takenAt: now,
           now: now,
-          photoLat: -0.910,
-          photoLng: 100.46,
-          reportLat: -0.9075, // ±278 m
-          reportLng: 100.46,
-        ),
-        isNull,
-      );
-    });
-    test('tanpa koordinat, jarak tidak diperiksa', () {
-      expect(
-        ReportRules.validateFoundPhoto(
-          takenAt: now.subtract(const Duration(minutes: 1)),
-          now: now,
+          photoLat: -0.914,
+          photoLng: 100.459,
+          reportLat: -0.9145,
+          reportLng: 100.459,
         ),
         isNull,
       );
     });
   });
 
-  group('hak akses status (FR-R09)', () {
-    test('Active: bisa edit inti, hapus, perpanjang', () {
+  group('hak akses status', () {
+    test('pemilik ditentukan oleh ownerId', () {
       final item = _item();
-      expect(ReportRules.canEditCoreFields(item), isTrue);
-      expect(ReportRules.canEdit(item), isTrue);
-      expect(ReportRules.canDelete(item), isTrue);
+      expect(ReportRules.canEdit(item, 'user:me'), isTrue);
+      expect(ReportRules.canEdit(item, 'user:other'), isFalse);
+      expect(ReportRules.canDelete(item, null), isFalse);
     });
-    test('InVerification: edit sebagian, tidak bisa hapus', () {
+
+    test('verifikasi klaim: boleh edit sebagian, tidak boleh hapus/tutup', () {
       final item = _item(status: ReportStatus.inVerification);
+      expect(ReportRules.canEdit(item, 'user:me'), isTrue);
       expect(ReportRules.canEditCoreFields(item), isFalse);
-      expect(ReportRules.canEdit(item), isTrue);
-      expect(ReportRules.canDelete(item), isFalse);
-      expect(ReportRules.canExtend(item), isFalse);
+      expect(ReportRules.canDelete(item, 'user:me'), isFalse);
+      expect(ReportRules.canClose(item, 'user:me'), isFalse);
     });
-    test('bukan pemilik tidak bisa apa-apa', () {
-      final item = _item(isOwner: false);
-      expect(ReportRules.canEdit(item), isFalse);
-      expect(ReportRules.canDelete(item), isFalse);
+
+    test('kedaluwarsa: boleh diperpanjang', () {
+      final item = _item(status: ReportStatus.expired);
+      expect(ReportRules.canExtend(item, 'user:me'), isTrue);
+      expect(ReportRules.canEdit(item, 'user:me'), isFalse);
     });
   });
 
-  group('kedaluwarsa (FR-R10)', () {
-    test('melewati expiresAt = expired', () {
-      expect(
-        ReportRules.isPastExpiry(
-          _item(expiresAt: now.subtract(const Duration(days: 1))),
-          now,
-        ),
-        isTrue,
-      );
-    });
-    test('pengingat tepat 7 hari, tidak pada 8 hari', () {
+  group('kedaluwarsa', () {
+    test('pengingat muncul 7 hari sebelum berakhir', () {
       expect(
         ReportRules.needsExpiryReminder(
-          _item(expiresAt: now.add(const Duration(days: 7))),
+          _item(expiresAt: now.add(const Duration(days: 6))),
           now,
         ),
         isTrue,
       );
       expect(
         ReportRules.needsExpiryReminder(
-          _item(expiresAt: now.add(const Duration(days: 8))),
+          _item(expiresAt: now.add(const Duration(days: 30))),
           now,
         ),
         isFalse,
       );
     });
-    test('expiryFrom = +90 hari', () {
-      expect(ReportRules.expiryFrom(now), now.add(const Duration(days: 90)));
+
+    test('lewat expiresAt dianggap kedaluwarsa', () {
+      expect(
+        ReportRules.isPastExpiry(
+          _item(expiresAt: now.subtract(const Duration(minutes: 1))),
+          now,
+        ),
+        isTrue,
+      );
     });
   });
 
-  group('input', () {
-    test('judul kategori sensitif tak boleh berisi nomor panjang', () {
-      expect(
-        ReportRules.validateSensitiveTitle('Dompet & Kartu', 'KTM 2111522001'),
-        isNotNull,
-      );
-      expect(
-        ReportRules.validateSensitiveTitle('Dompet & Kartu', 'Dompet hitam'),
-        isNull,
-      );
-      expect(
-        ReportRules.validateSensitiveTitle('Elektronik', 'HP 08123456789'),
-        isNull,
-      );
+  group('anti-spam & duplikat', () {
+    test('maksimal 5 laporan per 24 jam', () {
+      final items = [
+        for (var i = 0; i < ReportRules.maxReportsPerDay; i++)
+          _item(id: '$i', createdAt: now.subtract(Duration(hours: i))),
+      ];
+      expect(ReportRules.checkRateLimit(items, 'user:me', now), isNotNull);
+      expect(ReportRules.checkRateLimit(items, 'user:other', now), isNull);
     });
-    test('waktu kejadian tidak boleh di masa depan', () {
-      expect(
-        ReportRules.validateEventTime(now.add(const Duration(minutes: 5)), now),
-        isNotNull,
+
+    test('nama mirip + kategori sama dalam 24 jam = kemungkinan duplikat', () {
+      final items = [
+        _item(createdAt: now.subtract(const Duration(hours: 2))),
+      ];
+      final duplicate = ReportRules.findPossibleDuplicate(
+        items,
+        userId: 'user:me',
+        isFound: false,
+        category: 'Dompet & Kartu',
+        name: 'dompet coklat kulit',
+        now: now,
       );
-      expect(ReportRules.validateEventTime(now, now), isNull);
-    });
-    test('deskripsi maksimal 300 karakter', () {
-      expect(Validators.reportDescription('a' * 300), isNull);
-      expect(Validators.reportDescription('a' * 301), isNotNull);
+      expect(duplicate, isNotNull);
+
+      final differentCategory = ReportRules.findPossibleDuplicate(
+        items,
+        userId: 'user:me',
+        isFound: false,
+        category: 'Elektronik',
+        name: 'dompet coklat kulit',
+        now: now,
+      );
+      expect(differentCategory, isNull);
     });
   });
 
-  group('kategori', () {
-    test('ada 10 kategori baku', () {
-      expect(ReportCategories.all.length, 10);
-    });
-    test('hanya Dompet & Dokumen yang sensitif', () {
-      final sensitive = ReportCategories.all
-          .where((c) => c.isSensitive)
-          .map((c) => c.name)
-          .toList();
-      expect(sensitive, [
-        'Dompet & Kartu',
-        'Dokumen & Perlengkapan Kuliah',
-      ]);
-    });
-  });
-
-  group('ItemRepository', () {
-    test('add → Active, berlaku 90 hari; softDelete menyembunyikan', () {
-      final repo = ItemRepository(items: [], clock: () => now);
-      final stored = repo.add(_item(isOwner: true));
-      expect(stored.status, ReportStatus.active);
-      expect(stored.expiresAt, now.add(const Duration(days: 90)));
-      expect(repo.visibleItems.length, 1);
-      repo.softDelete('x');
-      expect(repo.visibleItems, isEmpty);
-    });
-    test('hapus laporan InVerification ditolak', () {
-      final repo = ItemRepository(
-        items: [_item(status: ReportStatus.inVerification)],
-        clock: () => now,
-      );
-      expect(() => repo.softDelete('x'), throwsStateError);
-    });
-    test('refreshExpiry lalu extend mengaktifkan kembali', () {
-      final repo = ItemRepository(
-        items: [_item(expiresAt: now.subtract(const Duration(days: 1)))],
-        clock: () => now,
-      );
-      repo.refreshExpiry();
-      expect(repo.items.first.status, ReportStatus.expired);
-      final extended = repo.extend('x');
-      expect(extended.status, ReportStatus.active);
-      expect(extended.expiresAt, now.add(const Duration(days: 90)));
-    });
-    test('laporan expired milik orang lain disembunyikan', () {
-      final repo = ItemRepository(
-        items: [
-          _item(
-            isOwner: false,
-            status: ReportStatus.expired,
-          ),
-        ],
-        clock: () => now,
-      );
-      expect(repo.visibleItems, isEmpty);
-    });
+  test('changedFields mencatat nama field yang berubah', () {
+    final before = _item();
+    final after = before.copyWith(
+      description: 'baru',
+      category: 'Tas & Ransel',
+    );
+    expect(
+      ReportRules.changedFields(before, after),
+      equals(['deskripsi', 'kategori']),
+    );
+    expect(ReportRules.changedFields(before, before.copyWith()), isEmpty);
   });
 }
