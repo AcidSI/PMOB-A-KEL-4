@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:find_it/screens/onboarding_screen.dart';
+import 'package:find_it/screens/splash_screen.dart';
 import 'package:find_it/models/item.dart';
 import 'package:find_it/screens/add_report_screen.dart';
 import 'package:find_it/screens/campus_location_picker_screen.dart';
@@ -18,6 +20,8 @@ import 'package:find_it/services/matching_service.dart';
 class AppRoutes {
   AppRoutes._();
 
+  static const String splash = '/';
+  static const String onboarding = '/onboarding';
   static const String login = '/login';
   static const String home = '/home';
   static const String detail = '/detail';
@@ -33,6 +37,16 @@ class AppRoutes {
 
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
+      case splash:
+        return MaterialPageRoute<void>(
+          builder: (_) => const SplashScreen(),
+          settings: settings,
+        );
+      case onboarding:
+        return MaterialPageRoute<void>(
+          builder: (_) => const OnboardingScreen(),
+          settings: settings,
+        );
       case login:
         return MaterialPageRoute<void>(
           builder: (_) => const LoginScreen(),

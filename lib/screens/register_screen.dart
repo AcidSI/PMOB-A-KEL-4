@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
-import '../routes/app_routes.dart';
-import '../utils/validators.dart'; // Pastikan file ini memiliki fungsi validasi yang sesuai
+import 'package:flutter/services.dart';
 
+import '../routes/app_routes.dart';
+import '../utils/validators.dart';
+import '../widgets/brand/findit_brand.dart';
+
+/// Halaman pendaftaran akun Find!t.
+///
+/// Gaya visual mengikuti Login (logo, palet hijau-kuning, dekorasi).
+/// Saat berhasil, halaman ditutup dengan mengembalikan email kampus
+/// agar Login bisa langsung mengisinya.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -12,17 +20,18 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _idController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _idController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
 
   bool _isLoading = false;
   bool _isObscurePassword = true;
   bool _isObscureConfirm = true;
+  bool _agreedToPrivacy = false;
+  bool _submittedOnce = false;
   String? _errorMessage;
 
   @override
@@ -36,8 +45,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  // ------------------------------------------------------------ Aksi
+
   Future<void> _handleRegister() async {
-    if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() => _submittedOnce = true);
+
+    final formValid = _formKey.currentState!.validate();
+    if (!formValid || !_agreedToPrivacy) return;
 
     setState(() {
       _isLoading = true;
@@ -45,312 +60,509 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      // Simulasi proses asinkron pendaftaran ke server
+      // Simulasi pendaftaran ke server.
       await Future.delayed(const Duration(seconds: 2));
-      
-      // Simulasi kemungkinan error acak (opsional, hapus di produksi)
-      // if (DateTime.now().second % 2 == 0) throw Exception("Koneksi terputus");
-
       if (!mounted) return;
-      
-      // Berhasil mendaftar, kembali ke halaman sebelumnya dengan data hasil (opsional)
-      Navigator.pop(context, _emailController.text);
-      
-    } catch (e) {
+      Navigator.pop(context, _emailController.text.trim());
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = "Gagal melakukan registrasi. Silakan periksa koneksi Anda.";
+        _errorMessage =
+            'Gagal melakukan registrasi. Silakan periksa koneksi Anda.';
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _onBackTapped() {
+    if (_isLoading) return;
+    Navigator.maybePop(context);
   }
 
   void _onLoginTapped() {
     if (_isLoading) return;
-    // Menggunakan named routes sesuai konstanta
     Navigator.pushReplacementNamed(context, AppRoutes.login);
   }
+
+  // ------------------------------------------------------------ Validasi
+
+  static String? _validateNimNip(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'NIM / NIP wajib diisi';
+    if (!RegExp(r'^\d{8,20}$').hasMatch(text)) {
+      return 'NIM / NIP hanya berisi angka (8–20 digit)';
+    }
+    return null;
+  }
+
+  static String? _validateCampusEmail(String? value) {
+    final text = value?.trim().toLowerCase() ?? '';
+    if (text.isEmpty) return 'Email kampus wajib diisi';
+    if (!RegExp(r'^[\w.+-]+@([\w-]+\.)*unand\.ac\.id$').hasMatch(text)) {
+      return 'Gunakan email kampus (@student.unand.ac.id / @unand.ac.id)';
+    }
+    return null;
+  }
+
+  String? _validateConfirm(String? value) =>
+      Validators.confirmPassword(value, _passwordController.text);
+
+  // ------------------------------------------------------------ UI
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_isLoading,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        // Tangani aksi jika back ditekan namun dihalangi (misal saat loading)
-      },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF1F5F9), // Latar belakang sesuai spesifikasi
-        appBar: AppBar(
-          backgroundColor: const Color(0xFFF1F5F9),
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black, size: 28),
-            onPressed: () {
-              if (!_isLoading) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          title: const Text(
-            'Registrasi Akun',
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w700,
-              fontSize: 20,
-              color: Colors.black,
+        backgroundColor: Colors.white,
+        body: Stack(
+          children: [
+            const Positioned(
+              right: -80,
+              top: -110,
+              child: BrandBlob(size: 240, color: BrandColors.mint),
             ),
-          ),
-          centerTitle: true,
-        ),
-        body: SafeArea(
-          child: _isLoading 
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFF045436)))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 25.0, vertical: 20.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Gunakan identitas sivitas akademik Unand',
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w400,
-                            fontSize: 13,
-                            color: Color(0xFF595858),
-                          ),
+            const Positioned(
+              right: 30,
+              top: 84,
+              child: BrandRing(size: 34, stroke: 7),
+            ),
+            SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                child: Form(
+                  key: _formKey,
+                  autovalidateMode: _submittedOnce
+                      ? AutovalidateMode.onUserInteraction
+                      : AutovalidateMode.disabled,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _TopBar(onBack: _onBackTapped),
+                      const SizedBox(height: 28),
+                      const _Heading(),
+                      const SizedBox(height: 28),
+                      ..._buildFields(),
+                      const SizedBox(height: 4),
+                      _PrivacyConsent(
+                        value: _agreedToPrivacy,
+                        showError: _submittedOnce && !_agreedToPrivacy,
+                        onChanged: _isLoading
+                            ? null
+                            : (v) => setState(() => _agreedToPrivacy = v),
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 16),
+                        _ErrorBanner(
+                          message: _errorMessage!,
+                          onRetry: _isLoading ? null : _handleRegister,
                         ),
-                        const SizedBox(height: 24),
-                        
-                        _buildInputField(
-                          label: 'Nama Lengkap',
-                          hint: 'Nama sesuai KTM',
-                          controller: _nameController,
-                          validator: Validators.registerName, // Sesuaikan dengan class di validators.dart
-                        ),
-                        _buildInputField(
-                          label: 'NIM/NIP',
-                          hint: 'Contoh: 2411522019',
-                          controller: _idController,
-                          keyboardType: TextInputType.number,
-                          validator: Validators.institutionalEmailOrNip,
-                        ),
-                        _buildInputField(
-                          label: 'Email kampus',
-                          hint: 'nama@student.unand.ac.id',
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          validator: Validators.institutionalEmailOrNip,
-                        ),
-                        _buildInputField(
-                          label: 'Nomor WhatsApp',
-                          hint: '08xxxxxxxxxx',
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          validator: Validators.noWhatsAppp, // Sesuaikan dengan class di validators.dart
-                        ),
-                        _buildInputField(
-                          label: 'Kata Sandi',
-                          hint: 'Minimal 8 karakter',
-                          controller: _passwordController,
-                          obscureText: _isObscurePassword,
-                          validator: Validators.password, // Sesuaikan dengan class di validators.dart
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _isObscurePassword ? Icons.visibility_off : Icons.visibility,
-                              color: Colors.grey,
-                            ),
-                            onPressed: () => setState(() => _isObscurePassword = !_isObscurePassword),
-                          ),
-                        ),
-                        _buildInputField(
-                          label: 'Konfirmasi Kata Sandi',
-                          hint: 'Masukkan kata sandi',
-                          controller: _confirmPasswordController,
-                          obscureText: _isObscureConfirm,
-                          validator: (value) {
-                            if (value != _passwordController.text) {
-                              return 'Kata sandi tidak cocok';
-                            }
-                            return Validators.confirmPassword(value, _passwordController.text);
-                          },
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _isObscureConfirm ? Icons.visibility_off : Icons.visibility,
-                              color: Colors.grey,
-                            ),
-                            onPressed: () => setState(() => _isObscureConfirm = !_isObscureConfirm),
-                          ),
-                        ),
-                        
-                        // Menampilkan Error State dengan Tombol Muat Ulang
-                        if (_errorMessage != null)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              border: Border.all(color: Colors.red.shade300),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Column(
-                              children: [
-                                Text(
-                                  _errorMessage!,
-                                  style: TextStyle(color: Colors.red.shade700, fontSize: 13),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 8),
-                                ElevatedButton.icon(
-                                  onPressed: _handleRegister,
-                                  icon: const Icon(Icons.refresh, size: 16),
-                                  label: const Text('Coba Lagi'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red.shade100,
-                                    foregroundColor: Colors.red.shade800,
-                                    elevation: 0,
-                                  ),
-                                )
-                              ],
-                            ),
-                          ),
-
-                        const SizedBox(height: 10),
-                        
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: _handleRegister,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF045436),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: const Text(
-                              'Daftar',
-                              style: TextStyle(
-                                fontFamily: 'Calibri',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                color: Color(0xFFFAFFF4),
-                              ),
-                            ),
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 24),
-                        Center(
-                          child: GestureDetector(
-                            onTap: _onLoginTapped,
-                            child: RichText(
-                              text: const TextSpan(
-                                text: 'Sudah punya akun sivitas? ',
-                                style: TextStyle(
-                                  fontFamily: 'Calibri',
-                                  fontWeight: FontWeight.w400,
-                                  fontSize: 13,
-                                  color: Color(0xFF595858),
-                                ),
-                                children: [
-                                  TextSpan(
-                                    text: 'Masuk',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF045436),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 30),
                       ],
-                    ),
+                      const SizedBox(height: 24),
+                      BrandPrimaryButton(
+                        label: 'Daftar & kirim verifikasi',
+                        trailingIcon: Icons.arrow_forward_rounded,
+                        busy: _isLoading,
+                        onPressed: _handleRegister,
+                      ),
+                      const SizedBox(height: 12),
+                      _LoginPrompt(onLogin: _onLoginTapped),
+                    ],
                   ),
                 ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildInputField({
-    required String label,
-    required String hint,
-    required TextEditingController controller,
-    required String? Function(String?) validator,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscureText = false,
-    Widget? suffixIcon,
-  }) {
+  List<Widget> _buildFields() {
+    return [
+      _LabeledField(
+        label: 'Nama lengkap',
+        child: TextFormField(
+          controller: _nameController,
+          enabled: !_isLoading,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.name],
+          validator: Validators.registerName,
+          decoration: brandInputDecoration(
+            hint: 'Sesuai KTM / kartu pegawai',
+            icon: Icons.person_outline_rounded,
+          ),
+        ),
+      ),
+      _LabeledField(
+        label: 'NIM / NIP',
+        child: TextFormField(
+          controller: _idController,
+          enabled: !_isLoading,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          validator: _validateNimNip,
+          decoration: brandInputDecoration(
+            hint: 'mis. 2411522019',
+            icon: Icons.badge_outlined,
+          ),
+        ),
+      ),
+      _LabeledField(
+        label: 'Email kampus',
+        helper: 'Tautan verifikasi dikirim ke email ini.',
+        child: TextFormField(
+          controller: _emailController,
+          enabled: !_isLoading,
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.email],
+          validator: _validateCampusEmail,
+          decoration: brandInputDecoration(
+            hint: 'nama@student.unand.ac.id',
+            icon: Icons.mail_outline_rounded,
+          ),
+        ),
+      ),
+      _LabeledField(
+        label: 'Nomor WhatsApp (opsional)',
+        helper: 'Hanya dibagikan setelah klaim disetujui kedua pihak.',
+        child: TextFormField(
+          controller: _phoneController,
+          enabled: !_isLoading,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.telephoneNumber],
+          validator: Validators.reportWhatsapp,
+          decoration: brandInputDecoration(
+            hint: '08xxxxxxxxxx',
+            icon: Icons.phone_outlined,
+          ),
+        ),
+      ),
+      _LabeledField(
+        label: 'Kata sandi',
+        child: TextFormField(
+          controller: _passwordController,
+          enabled: !_isLoading,
+          obscureText: _isObscurePassword,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.newPassword],
+          validator: Validators.password,
+          decoration: brandInputDecoration(
+            hint: 'Minimal 8 karakter',
+            icon: Icons.lock_outline_rounded,
+            suffix: _VisibilityToggle(
+              obscured: _isObscurePassword,
+              onPressed: () =>
+                  setState(() => _isObscurePassword = !_isObscurePassword),
+            ),
+          ),
+        ),
+      ),
+      _LabeledField(
+        label: 'Ulangi kata sandi',
+        child: TextFormField(
+          controller: _confirmPasswordController,
+          enabled: !_isLoading,
+          obscureText: _isObscureConfirm,
+          textInputAction: TextInputAction.done,
+          validator: _validateConfirm,
+          onFieldSubmitted: (_) => _handleRegister(),
+          decoration: brandInputDecoration(
+            hint: 'Ketik ulang kata sandi',
+            icon: Icons.lock_outline_rounded,
+            suffix: _VisibilityToggle(
+              obscured: _isObscureConfirm,
+              onPressed: () =>
+                  setState(() => _isObscureConfirm = !_isObscureConfirm),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+}
+
+// ======================================================= Widget privat
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.onBack});
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox.square(
+          dimension: 44,
+          child: IconButton(
+            tooltip: 'Kembali ke Masuk',
+            onPressed: onBack,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: BrandColors.greenDeep,
+              side: const BorderSide(color: BrandColors.outline),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: const Icon(Icons.arrow_back_rounded, size: 20),
+          ),
+        ),
+        const SizedBox(width: 14),
+        const FinditLogo(variant: FinditLogoVariant.wordmark, height: 24),
+      ],
+    );
+  }
+}
+
+class _Heading extends StatelessWidget {
+  const _Heading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Buat akun Find!t',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+            color: BrandColors.greenDeep,
+          ),
+        ),
+        SizedBox(height: 6),
+        Text(
+          'Hanya untuk sivitas Universitas Andalas. Datamu dipakai untuk '
+          'memastikan setiap laporan bisa dipercaya.',
+          style: TextStyle(fontSize: 14, height: 1.5, color: BrandColors.body),
+        ),
+      ],
+    );
+  }
+}
+
+/// Label di atas field + teks bantuan opsional di bawahnya.
+class _LabeledField extends StatelessWidget {
+  const _LabeledField({required this.label, required this.child, this.helper});
+
+  final String label;
+  final String? helper;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20.0),
+      padding: const EdgeInsets.only(bottom: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Calibri',
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-              color: Colors.black,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: BrandColors.ink,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: controller,
-            keyboardType: keyboardType,
-            obscureText: obscureText,
-            validator: validator,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 13,
-              color: Colors.black,
+          child,
+          if (helper != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 4),
+              child: Text(
+                helper!,
+                style: const TextStyle(fontSize: 12, color: BrandColors.muted),
+              ),
             ),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w400,
+        ],
+      ),
+    );
+  }
+}
+
+class _VisibilityToggle extends StatelessWidget {
+  const _VisibilityToggle({required this.obscured, required this.onPressed});
+  final bool obscured;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: obscured ? 'Tampilkan kata sandi' : 'Sembunyikan kata sandi',
+      onPressed: onPressed,
+      color: BrandColors.muted,
+      icon: Icon(
+        obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+        size: 20,
+      ),
+    );
+  }
+}
+
+class _PrivacyConsent extends StatelessWidget {
+  const _PrivacyConsent({
+    required this.value,
+    required this.showError,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final bool showError;
+  final ValueChanged<bool>? onChanged;
+
+  static const _errorColor = Color(0xFFB42318);
+
+  @override
+  Widget build(BuildContext context) {
+    final onChanged = this.onChanged;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onChanged == null ? null : () => onChanged(!value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox.square(
+                  dimension: 24,
+                  child: Checkbox(
+                    value: value,
+                    onChanged: onChanged == null
+                        ? null
+                        : (v) => onChanged(v ?? false),
+                    activeColor: BrandColors.green,
+                    side: BorderSide(
+                      color: showError ? _errorColor : BrandColors.outline,
+                      width: 1.5,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'Saya setuju data saya diproses sesuai ',
+                      children: [
+                        TextSpan(
+                          text: 'Kebijakan Privasi Find!t',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: BrandColors.green,
+                          ),
+                        ),
+                        TextSpan(text: ' untuk keperluan pelaporan barang.'),
+                      ],
+                    ),
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: BrandColors.body,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (showError)
+          const Padding(
+            padding: EdgeInsets.only(left: 36, top: 2),
+            child: Text(
+              'Centang persetujuan ini untuk melanjutkan.',
+              style: TextStyle(fontSize: 12, color: _errorColor),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFECDCA)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 20,
+            color: Color(0xFFB42318),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
                 fontSize: 13,
-                color: Color(0xFF595858),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              suffixIcon: suffixIcon,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0x40000000), width: 1), // rgba(0,0,0,0.25)
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0x40000000), width: 1),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFF045436), width: 1.5),
-              ),
-              errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Colors.red, width: 1),
+                height: 1.4,
+                color: Color(0xFF912018),
               ),
             ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB42318),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            child: const Text('Coba lagi'),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LoginPrompt extends StatelessWidget {
+  const _LoginPrompt({required this.onLogin});
+  final VoidCallback onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text(
+          'Sudah punya akun?',
+          style: TextStyle(fontSize: 14, color: BrandColors.body),
+        ),
+        TextButton(
+          onPressed: onLogin,
+          style: TextButton.styleFrom(
+            foregroundColor: BrandColors.green,
+            textStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          child: const Text('Masuk'),
+        ),
+      ],
     );
   }
 }
